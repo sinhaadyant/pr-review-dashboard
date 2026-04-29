@@ -2,32 +2,67 @@ import { Octokit } from "@octokit/rest";
 import pLimit from "p-limit";
 import { logger } from "./logger";
 
-const TOKEN = process.env.GITHUB_TOKEN;
+/**
+ * Token pool. Supports either:
+ *  - GITHUB_TOKEN (single token), or
+ *  - GITHUB_TOKENS=tok1,tok2,tok3 (comma-separated, round-robin)
+ *
+ * Round-robin spreads load across PATs so the effective rate-limit ceiling
+ * becomes 5000 × N. The first PAT to be configured (single or list) wins.
+ */
+function loadTokens(): string[] {
+  const list = (process.env.GITHUB_TOKENS ?? "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (list.length > 0) return list;
+  const single = process.env.GITHUB_TOKEN?.trim();
+  return single ? [single] : [];
+}
 
-if (!TOKEN && process.env.NODE_ENV !== "test") {
+const TOKENS = loadTokens();
+
+if (TOKENS.length === 0 && process.env.NODE_ENV !== "test") {
   logger.warn(
-    "GITHUB_TOKEN is not set — API routes will fail until configured",
+    "GITHUB_TOKEN(S) not set — API routes will fail until configured",
   );
 }
 
 declare global {
-  // eslint-disable-next-line no-var
-  var __octokit__: Octokit | undefined;
+  var __octokitPool__: Octokit[] | undefined;
+  var __octokitCursor__: number | undefined;
+}
+
+function buildPool(): Octokit[] {
+  return TOKENS.map(
+    (token) =>
+      new Octokit({
+        auth: token,
+        userAgent: "pr-review-dashboard",
+        request: { timeout: 30_000 },
+        retry: { enabled: true },
+        throttle: { enabled: true },
+      }),
+  );
+}
+
+export function getTokenPoolSize(): number {
+  return TOKENS.length;
 }
 
 export function getOctokit(): Octokit {
-  if (!globalThis.__octokit__) {
-    globalThis.__octokit__ = new Octokit({
-      auth: TOKEN,
-      userAgent: "pr-review-dashboard",
-      request: {
-        timeout: 30_000,
-      },
-      retry: { enabled: true },
-      throttle: { enabled: true },
-    });
+  if (!globalThis.__octokitPool__ || globalThis.__octokitPool__.length === 0) {
+    globalThis.__octokitPool__ = buildPool();
+    globalThis.__octokitCursor__ = 0;
   }
-  return globalThis.__octokit__;
+  const pool = globalThis.__octokitPool__;
+  if (pool.length === 0) {
+    // Fall back to unauthenticated client (will still warn upstream).
+    return new Octokit({ userAgent: "pr-review-dashboard" });
+  }
+  const cursor = globalThis.__octokitCursor__ ?? 0;
+  globalThis.__octokitCursor__ = (cursor + 1) % pool.length;
+  return pool[cursor];
 }
 
 export const fetchLimit = pLimit(8);

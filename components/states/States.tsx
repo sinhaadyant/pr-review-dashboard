@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleDashed,
-  Inbox,
   KeyRound,
   Loader2,
   RefreshCcw,
@@ -70,22 +69,112 @@ export function ErrorState({
 export function EmptyState({
   title,
   description,
+  actions,
 }: {
   title: string;
   description?: string;
+  actions?: React.ReactNode;
 }) {
   return (
-    <Card className="p-12 flex flex-col items-center text-center max-w-xl mx-auto">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-        <Inbox className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <h2 className="font-semibold">{title}</h2>
+    <Card className="p-10 sm:p-12 flex flex-col items-center text-center max-w-xl mx-auto">
+      <EmptyIllustration className="mb-5 h-32 w-32 text-muted-foreground" />
+      <h2 className="font-semibold text-lg">{title}</h2>
       {description && (
-        <p className="mt-1 text-sm text-muted-foreground max-w-md">
+        <p className="mt-1.5 text-sm text-muted-foreground max-w-md">
           {description}
         </p>
       )}
+      {actions && (
+        <div className="mt-5 flex flex-wrap gap-2 justify-center">
+          {actions}
+        </div>
+      )}
     </Card>
+  );
+}
+
+function EmptyIllustration({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 160 120" className={className} aria-hidden role="img">
+      <defs>
+        <linearGradient id="empty-grad-1" x1="0" x2="1" y1="0" y2="1">
+          <stop
+            offset="0%"
+            stopColor="hsl(var(--chart-1))"
+            stopOpacity="0.25"
+          />
+          <stop
+            offset="100%"
+            stopColor="hsl(var(--chart-3))"
+            stopOpacity="0.05"
+          />
+        </linearGradient>
+      </defs>
+      <ellipse cx="80" cy="105" rx="56" ry="6" fill="hsl(var(--muted))" />
+      <rect
+        x="36"
+        y="20"
+        width="88"
+        height="68"
+        rx="8"
+        fill="url(#empty-grad-1)"
+        stroke="hsl(var(--border))"
+        strokeWidth="1.5"
+      />
+      <line
+        x1="46"
+        y1="36"
+        x2="100"
+        y2="36"
+        stroke="hsl(var(--border))"
+        strokeWidth="2"
+      />
+      <line
+        x1="46"
+        y1="46"
+        x2="86"
+        y2="46"
+        stroke="hsl(var(--border))"
+        strokeWidth="2"
+      />
+      <line
+        x1="46"
+        y1="56"
+        x2="92"
+        y2="56"
+        stroke="hsl(var(--border))"
+        strokeWidth="2"
+      />
+      <circle
+        cx="112"
+        cy="32"
+        r="14"
+        fill="hsl(var(--card))"
+        stroke="hsl(var(--chart-1))"
+        strokeWidth="2"
+      />
+      <line
+        x1="121"
+        y1="41"
+        x2="132"
+        y2="52"
+        stroke="hsl(var(--chart-1))"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <g
+        transform="translate(68 70)"
+        stroke="currentColor"
+        fill="none"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6" />
+        <polyline points="2,12 7,12 9,15 15,15 17,12 22,12" />
+        <path d="M5 2h14a2 2 0 0 1 1.78 1.1L22 8H2l1.22-4.9A2 2 0 0 1 5 2z" />
+      </g>
+    </svg>
   );
 }
 
@@ -93,10 +182,8 @@ export function StaleDataBanner({ cache }: { cache: CacheMeta }) {
   if (!cache.stale) return null;
   return (
     <div className="rounded-lg border border-[hsl(var(--warning)/0.3)] bg-[hsl(var(--warning)/0.08)] px-3 py-2 text-xs flex items-center gap-2">
-      <ShieldAlert className="h-3.5 w-3.5 text-[hsl(var(--warning))]" />
-      <span className="text-[hsl(var(--warning))] font-medium">
-        Showing stale data
-      </span>
+      <ShieldAlert className="h-3.5 w-3.5 text-warning" />
+      <span className="text-warning font-medium">Showing stale data</span>
       <span className="text-muted-foreground">
         — generated {new Date(cache.generatedAt).toLocaleString()}
       </span>
@@ -112,10 +199,8 @@ export function PartialDataBanner({
   if (!reposSkipped || reposSkipped.length === 0) return null;
   return (
     <div className="rounded-lg border border-[hsl(var(--warning)/0.3)] bg-[hsl(var(--warning)/0.08)] px-3 py-2 text-xs flex items-center gap-2">
-      <AlertTriangle className="h-3.5 w-3.5 text-[hsl(var(--warning))]" />
-      <span className="text-[hsl(var(--warning))] font-medium">
-        Partial data
-      </span>
+      <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+      <span className="text-warning font-medium">Partial data</span>
       <span className="text-muted-foreground">
         — {reposSkipped.length} repo{reposSkipped.length === 1 ? "" : "s"} not
         included in this run. Increase the repo cap or filter to a smaller scope
@@ -168,7 +253,7 @@ export function DetailedLoadingState({
   ];
 
   return (
-    <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-card via-card to-[hsl(var(--chart-1)/0.08)]">
+    <Card className="overflow-hidden border-primary/20 bg-linear-to-br from-card via-card to-[hsl(var(--chart-1)/0.08)]">
       <div className="p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -220,7 +305,7 @@ export function DetailedLoadingState({
                     <Icon
                       className={`h-4 w-4 ${
                         stage.active && !stage.done ? "animate-spin" : ""
-                      } ${stage.done ? "text-[hsl(var(--success))]" : "text-muted-foreground"}`}
+                      } ${stage.done ? "text-success" : "text-muted-foreground"}`}
                     />
                   </div>
                   <div>

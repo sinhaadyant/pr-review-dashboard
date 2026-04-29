@@ -25,7 +25,7 @@ export function DashboardHero({
           } with PR activity`;
 
   return (
-    <Card className="overflow-hidden border-primary/15 bg-gradient-to-br from-card via-card to-[hsl(var(--chart-1)/0.08)]">
+    <Card className="overflow-hidden border-primary/15 bg-linear-to-br from-card via-card to-[hsl(var(--chart-1)/0.08)]">
       <div className="relative p-6">
         <div className="absolute right-6 top-6 hidden rounded-full bg-primary/5 p-3 text-primary md:block">
           <Sparkles className="h-5 w-5" />

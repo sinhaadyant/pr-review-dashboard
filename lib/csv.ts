@@ -1,4 +1,6 @@
-import type { AggregatedResponse, NormalizedPR } from "./types";
+import type { AggregatedResponse, NormalizedPR, UserStats } from "./types";
+
+export type CsvGrain = "comment" | "pr" | "user";
 
 const COLUMNS = [
   "owner",
@@ -104,7 +106,13 @@ function rowFromComment(
   ];
 }
 
-export function aggregateToCSV(data: AggregatedResponse): string {
+export function aggregateToCSV(
+  data: AggregatedResponse,
+  grain: CsvGrain = "comment",
+): string {
+  if (grain === "pr") return prGrainCSV(data);
+  if (grain === "user") return userGrainCSV(data.users);
+
   const sprint = data.appliedFilters.sprint ?? "custom";
   const lines: string[] = [];
   lines.push("\uFEFF" + COLUMNS.join(","));
@@ -123,7 +131,123 @@ export function aggregateToCSV(data: AggregatedResponse): string {
   return lines.join("\r\n");
 }
 
-export function csvFilename(data: AggregatedResponse): string {
+const PR_COLUMNS = [
+  "owner",
+  "repo",
+  "sprint",
+  "pr_number",
+  "pr_title",
+  "pr_author",
+  "pr_state",
+  "pr_created_at",
+  "pr_merged_at",
+  "pr_additions",
+  "pr_deletions",
+  "pr_changed_files",
+  "total_comments",
+  "R1_comments",
+  "R2_comments",
+  "approvals",
+  "changes_requested",
+  "time_to_first_review_h",
+  "time_to_merge_h",
+  "html_url",
+] as const;
+
+function prGrainCSV(data: AggregatedResponse): string {
+  const sprint = data.appliedFilters.sprint ?? "custom";
+  const lines: string[] = [];
+  lines.push("\uFEFF" + PR_COLUMNS.join(","));
+  for (const pr of data.prs) {
+    lines.push(
+      [
+        pr.owner,
+        pr.repo,
+        sprint,
+        String(pr.number),
+        pr.title,
+        pr.author,
+        pr.state,
+        pr.createdAt,
+        pr.mergedAt ?? "",
+        String(pr.additions),
+        String(pr.deletions),
+        String(pr.changedFiles),
+        String(pr.totalComments),
+        String(pr.R1Comments),
+        String(pr.R2Comments),
+        String(pr.approvals),
+        String(pr.changesRequested),
+        pr.timeToFirstReviewHours == null
+          ? ""
+          : pr.timeToFirstReviewHours.toFixed(2),
+        pr.timeToMergeHours == null ? "" : pr.timeToMergeHours.toFixed(2),
+        pr.htmlUrl,
+      ]
+        .map(escape)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n");
+}
+
+const USER_COLUMNS = [
+  "login",
+  "name",
+  "reviewer_type",
+  "is_bot",
+  "prs_authored",
+  "prs_merged",
+  "prs_open",
+  "prs_closed",
+  "comments_given",
+  "R1_comments_given",
+  "R2_comments_given",
+  "comments_received",
+  "approvals_given",
+  "changes_requested_given",
+  "avg_time_to_first_review_h",
+  "avg_time_to_merge_h",
+] as const;
+
+function userGrainCSV(users: UserStats[]): string {
+  const lines: string[] = [];
+  lines.push("\uFEFF" + USER_COLUMNS.join(","));
+  for (const u of users) {
+    lines.push(
+      [
+        u.login,
+        u.name ?? "",
+        u.reviewerType,
+        String(u.isBot),
+        String(u.prsAuthored),
+        String(u.prsMerged),
+        String(u.prsOpen),
+        String(u.prsClosed),
+        String(u.commentsGiven),
+        String(u.R1_commentsGiven),
+        String(u.R2_commentsGiven),
+        String(u.commentsReceived),
+        String(u.approvalsGiven),
+        String(u.changesRequestedGiven),
+        u.avgTimeToFirstReviewHours == null
+          ? ""
+          : u.avgTimeToFirstReviewHours.toFixed(2),
+        u.avgTimeToMergeHours == null
+          ? ""
+          : u.avgTimeToMergeHours.toFixed(2),
+      ]
+        .map(escape)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n");
+}
+
+export function csvFilename(
+  data: AggregatedResponse,
+  grain: CsvGrain = "comment",
+): string {
   const sprint = data.appliedFilters.sprint ?? "custom";
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const repos = data.appliedFilters.repos;
@@ -132,5 +256,5 @@ export function csvFilename(data: AggregatedResponse): string {
   if (repos.length === 1) scope = repos[0].replace("/", "-");
   else if (orgs.length === 1) scope = orgs[0];
   else scope = "all";
-  return `pr-analytics-${scope}-${sprint}-${ts}.csv`;
+  return `pr-analytics-${grain}-${scope}-${sprint}-${ts}.csv`;
 }

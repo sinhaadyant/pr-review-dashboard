@@ -11,15 +11,17 @@ export function TopProgressBar({ active }: { active: boolean }) {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    let raf: number;
+    let raf = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     if (active) {
-      setVisible(true);
-      setProgress(8);
+      // Schedule the initial mount + tick inside rAF so React's strict effect
+      // rule doesn't flag synchronous setState in the effect body.
       const tick = () => {
+        setVisible(true);
         setProgress((p) => {
-          // Asymptotic approach to 90% so it never "completes" while fetching
+          if (p === 0) return 8;
+          // Asymptotic approach to 90% so it never "completes" while fetching.
           const next = p + Math.max(0.4, (90 - p) * 0.04);
           return next < 90 ? next : 90;
         });
@@ -27,11 +29,13 @@ export function TopProgressBar({ active }: { active: boolean }) {
       };
       raf = requestAnimationFrame(tick);
     } else if (visible) {
-      setProgress(100);
-      timer = setTimeout(() => {
-        setVisible(false);
-        setProgress(0);
-      }, 350);
+      raf = requestAnimationFrame(() => {
+        setProgress(100);
+        timer = setTimeout(() => {
+          setVisible(false);
+          setProgress(0);
+        }, 350);
+      });
     }
 
     return () => {

@@ -2,6 +2,7 @@
 
 import { Filter, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useFilters } from "@/hooks/use-filters";
 import { useDiscover } from "@/hooks/use-discover";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,36 @@ export function FilterBar() {
       from: null,
       to: null,
     });
+    toast.success("Filters cleared");
   };
+
+  // Toast a short summary whenever the *applied* filter set changes (debounced
+  // so we don't spam on every keystroke in the search box).
+  const lastSummary = useRef<string>("");
+  useEffect(() => {
+    const summary = [
+      filters.orgs.length && `${filters.orgs.length} org${filters.orgs.length === 1 ? "" : "s"}`,
+      filters.repos.length && `${filters.repos.length} repo${filters.repos.length === 1 ? "" : "s"}`,
+      filters.users.length && `${filters.users.length} user${filters.users.length === 1 ? "" : "s"}`,
+      filters.state !== "all" && filters.state,
+      filters.reviewerType !== "all" && `${filters.reviewerType} only`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const tid = setTimeout(() => {
+      if (summary && summary !== lastSummary.current) {
+        toast.message("Filters applied", { description: summary });
+      }
+      lastSummary.current = summary;
+    }, 220);
+    return () => clearTimeout(tid);
+  }, [
+    filters.orgs.length,
+    filters.repos.length,
+    filters.users.length,
+    filters.state,
+    filters.reviewerType,
+  ]);
 
   return (
     <div className="sticky top-14 z-30 rounded-xl border border-border bg-card/95 p-3 space-y-3 backdrop-blur supports-backdrop-filter:bg-card/80 shadow-sm">

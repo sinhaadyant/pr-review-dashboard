@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Filter as FilterIcon, RotateCcw } from "lucide-react";
+import { useMemo } from "react";
 import { ActivityCharts } from "@/components/charts/ActivityCharts";
 import { DashboardHero } from "@/components/DashboardHero";
 import { FilterBar } from "@/components/filters/FilterBar";
 import { Footer } from "@/components/Footer";
 import { PRList } from "@/components/pr/PRList";
 import { ReposGrid } from "@/components/repos/ReposGrid";
+import { ScrollToTop } from "@/components/ScrollToTop";
+import { StalePRRadar } from "@/components/StalePRRadar";
 import { StatCards } from "@/components/StatCards";
 import {
   DetailedLoadingState,
@@ -15,10 +18,10 @@ import {
   PartialDataBanner,
   StaleDataBanner,
 } from "@/components/states/States";
-import { ScrollToTop } from "@/components/ScrollToTop";
 import { Tabs } from "@/components/Tabs";
 import { TopBar } from "@/components/TopBar";
 import { TopProgressBar } from "@/components/TopProgressBar";
+import { Button } from "@/components/ui/button";
 import { UsersChartGrid } from "@/components/users/UsersChartGrid";
 import { UsersLeaderboardTable } from "@/components/users/UsersLeaderboardTable";
 import { useAggregate } from "@/hooks/use-aggregate";
@@ -26,27 +29,15 @@ import { useConfig, useDiscover } from "@/hooks/use-discover";
 import { useFilters } from "@/hooks/use-filters";
 
 export default function Home() {
-  const [filters] = useFilters();
+  const [filters, setFilters] = useFilters();
   const { data, error, isFetching, refetch } = useAggregate(filters);
   const discoverQuery = useDiscover();
   const configQuery = useConfig();
 
-  // Keep last successful data so we can decide between "first load" vs
-  // "refetch with previous data". Cleared when a new fetch starts so the
-  // detailed loader shows on refresh and filter changes.
-  const [shownData, setShownData] = useState(data);
-  const lastFetchingRef = useRef(false);
-
-  useEffect(() => {
-    if (isFetching && !lastFetchingRef.current) {
-      // Fetch just started — drop displayed data so loader takes over.
-      setShownData(undefined);
-    } else if (!isFetching && data) {
-      // Fetch finished — promote new data.
-      setShownData(data);
-    }
-    lastFetchingRef.current = isFetching;
-  }, [isFetching, data]);
+  // Without `placeholderData`, `data` is undefined while a new query runs —
+  // so `data` itself answers the "should I show the loader?" question.
+  const shownData = data;
+  const showLoader = isFetching && !data;
 
   const sprintLabel = useMemo(() => {
     const sprintId = filters.sprint ?? configQuery.data?.activeSprintId;
@@ -65,7 +56,18 @@ export default function Home() {
     );
   }, [shownData, filters.q]);
 
-  const showLoader = isFetching && !shownData;
+  const clearAllFilters = () => {
+    setFilters({
+      orgs: null,
+      repos: null,
+      users: null,
+      state: null,
+      reviewerType: null,
+      q: null,
+      from: null,
+      to: null,
+    });
+  };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -101,7 +103,27 @@ export default function Home() {
             {shownData && shownData.stats.totalPRs === 0 && !showLoader ? (
               <EmptyState
                 title="No PRs in this window"
-                description="Try selecting a different sprint, expanding the date range, or clearing filters."
+                description="Try expanding the date range, switching sprints, or clearing filters."
+                actions={
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearAllFilters}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Clear filters
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFilters({ sprint: null })}
+                    >
+                      <FilterIcon className="h-3.5 w-3.5" />
+                      Reset to default sprint
+                    </Button>
+                  </>
+                }
               />
             ) : (
               shownData &&
@@ -111,9 +133,13 @@ export default function Home() {
 
                   {filters.tab === "users" && (
                     <div key="users" className="space-y-4 animate-tab-in">
-                      <UsersChartGrid users={shownData.users} />
+                      <UsersChartGrid
+                        users={shownData.users}
+                        prs={shownData.prs}
+                      />
                       <UsersLeaderboardTable
                         users={shownData.users}
+                        prs={shownData.prs}
                         searchQuery={filters.q}
                       />
                     </div>
@@ -121,14 +147,19 @@ export default function Home() {
 
                   {filters.tab === "repos" && (
                     <div key="repos" className="animate-tab-in">
-                      <ReposGrid repos={shownData.repos} />
+                      <ReposGrid repos={shownData.repos} prs={shownData.prs} />
                     </div>
                   )}
 
                   {filters.tab === "activity" && (
                     <div key="activity" className="space-y-4 animate-tab-in">
                       <ActivityCharts data={shownData} />
-                      <PRList prs={filteredPRs} searchQuery={filters.q} />
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <StalePRRadar prs={shownData.prs} />
+                        <div className="lg:col-span-1">
+                          <PRList prs={filteredPRs} searchQuery={filters.q} />
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

@@ -167,6 +167,39 @@ body {
   }
 }
 
+/* Density variants — applied via <html data-density="..."> from useDensity. */
+html[data-density="compact"] table tbody td,
+html[data-density="compact"] table thead th {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+html[data-density="compact"] .stagger {
+  gap: 0.5rem;
+}
+
+/* High-contrast theme — opt in via <html data-contrast="high">. Boosts
+   foreground/border separation for low-vision users. */
+html[data-contrast="high"] {
+  --border: 220 30% 30%;
+  --muted-foreground: 215 25% 30%;
+  --ring: 220 100% 30%;
+}
+html[data-contrast="high"].dark {
+  --border: 220 30% 75%;
+  --muted-foreground: 215 25% 80%;
+  --ring: 220 100% 80%;
+}
+
+/* Page transition — wraps <main> children fade. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-page-in {
+  animation: page-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {

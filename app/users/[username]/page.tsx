@@ -4,23 +4,47 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
-import { PRList } from "@/components/pr/PRList";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Footer } from "@/components/Footer";
+import { PRList } from "@/components/pr/PRList";
+import { Sparkline } from "@/components/Sparkline";
 import { TopBar } from "@/components/TopBar";
+import { TopProgressBar } from "@/components/TopProgressBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, EmptyState } from "@/components/states/States";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAggregate } from "@/hooks/use-aggregate";
 import { useFilters } from "@/hooks/use-filters";
 import { formatNumber } from "@/lib/utils";
 
+const ANIM_MS = 600;
+const TOOLTIP_STYLE = {
+  background: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: 8,
+  fontSize: 12,
+  color: "hsl(var(--foreground))",
+};
+
 export default function UserPage() {
   const params = useParams<{ username: string }>();
   const username = decodeURIComponent(params.username);
   const [filters] = useFilters();
-  const { data, isLoading, error } = useAggregate(filters);
+  const { data, isLoading, error, isFetching } = useAggregate(filters);
 
   const user = useMemo(
     () =>
@@ -34,11 +58,82 @@ export default function UserPage() {
       ) ?? [],
     [data, username],
   );
+  const userComments = useMemo(
+    () =>
+      data?.prs.filter((p) =>
+        p.comments.some(
+          (c) => c.author.toLowerCase() === username.toLowerCase(),
+        ),
+      ) ?? [],
+    [data, username],
+  );
+
+  // 30-day activity buckets
+  const { sparkPRs, sparkComments } = useMemo(() => {
+    const days = 30;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dayKeys: string[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      dayKeys.push(d.toISOString().slice(0, 10));
+    }
+    const sparkPRs = new Array(days).fill(0);
+    const sparkComments = new Array(days).fill(0);
+    if (data) {
+      for (const p of data.prs) {
+        if (p.author.toLowerCase() === username.toLowerCase()) {
+          const idx = dayKeys.indexOf(p.createdAt.slice(0, 10));
+          if (idx >= 0) sparkPRs[idx]++;
+        }
+        for (const c of p.comments) {
+          if (c.author.toLowerCase() !== username.toLowerCase()) continue;
+          const idx = dayKeys.indexOf(c.createdAt.slice(0, 10));
+          if (idx >= 0) sparkComments[idx]++;
+        }
+      }
+    }
+    return { sparkPRs, sparkComments };
+  }, [data, username]);
+
+  const r1r2Pie = useMemo(() => {
+    if (!user) return [];
+    return [
+      {
+        name: "R1 comments",
+        value: user.R1_commentsGiven,
+        color: "hsl(var(--chart-1))",
+      },
+      {
+        name: "R2 comments",
+        value: user.R2_commentsGiven,
+        color: "hsl(var(--chart-3))",
+      },
+    ].filter((d) => d.value > 0);
+  }, [user]);
+
+  const reviewerInteractions = useMemo(() => {
+    if (!data) return [];
+    const counts = new Map<string, number>();
+    for (const p of userPRs) {
+      for (const c of p.comments) {
+        if (c.author.toLowerCase() === username.toLowerCase()) continue;
+        counts.set(c.author, (counts.get(c.author) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([login, count]) => ({ login, count }))
+      .reverse();
+  }, [data, userPRs, username]);
 
   return (
     <div className="flex min-h-screen flex-col">
+      <TopProgressBar active={isFetching} />
       <TopBar />
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-6 space-y-6">
+      <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-6 space-y-6 animate-page-in">
         <Link href="/" className="inline-flex">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4" />
@@ -100,6 +195,7 @@ export default function UserPage() {
                       target="_blank"
                       rel="noreferrer"
                       className="text-muted-foreground hover:text-foreground"
+                      aria-label={`Open ${user.login} on GitHub`}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </a>
@@ -114,9 +210,9 @@ export default function UserPage() {
 
               <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Stat label="PRs authored" value={user.prsAuthored} />
-                <Stat label="Merged" value={user.prsMerged} />
-                <Stat label="Comments given" value={user.commentsGiven} />
-                <Stat label="Comments received" value={user.commentsReceived} />
+                <Stat label="Merged" value={user.prsMerged} tone="success" />
+                <Stat label="Open" value={user.prsOpen} tone="warning" />
+                <Stat label="Closed" value={user.prsClosed} tone="muted" />
                 <Stat
                   label="R1 comments given"
                   value={user.R1_commentsGiven}
@@ -141,12 +237,133 @@ export default function UserPage() {
                   }
                 />
               </div>
+            </Card>
 
-              {user.topRepos.length > 0 && (
-                <div className="mt-6">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-                    Top repos
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>30-day PRs opened</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Sparkline
+                    values={sparkPRs}
+                    width={400}
+                    height={60}
+                    color="hsl(var(--chart-1))"
+                  />
+                  <div className="mt-2 text-xs text-muted-foreground tabular-nums">
+                    Total: {sparkPRs.reduce((a, b) => a + b, 0)}
                   </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>30-day comments given</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Sparkline
+                    values={sparkComments}
+                    width={400}
+                    height={60}
+                    color="hsl(var(--chart-3))"
+                  />
+                  <div className="mt-2 text-xs text-muted-foreground tabular-nums">
+                    Total: {sparkComments.reduce((a, b) => a + b, 0)}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>R1 vs R2 mix</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-40">
+                    {r1r2Pie.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                        No comments given.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={r1r2Pie}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={32}
+                            outerRadius={56}
+                            paddingAngle={3}
+                            animationDuration={ANIM_MS}
+                          >
+                            {r1r2Pie.map((d, i) => (
+                              <Cell
+                                key={i}
+                                fill={d.color}
+                                stroke="hsl(var(--card))"
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={TOOLTIP_STYLE} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {reviewerInteractions.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    Top reviewers on {user.login}&apos;s PRs
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={reviewerInteractions}
+                        layout="vertical"
+                        margin={{ left: 10 }}
+                      >
+                        <CartesianGrid
+                          horizontal={false}
+                          stroke="hsl(var(--border))"
+                          strokeDasharray="3 3"
+                        />
+                        <XAxis
+                          type="number"
+                          stroke="hsl(var(--muted-foreground))"
+                          fontSize={11}
+                        />
+                        <YAxis
+                          dataKey="login"
+                          type="category"
+                          width={120}
+                          stroke="hsl(var(--muted-foreground))"
+                          fontSize={11}
+                        />
+                        <Tooltip contentStyle={TOOLTIP_STYLE} />
+                        <Bar
+                          dataKey="count"
+                          fill="hsl(var(--chart-1))"
+                          radius={[0, 4, 4, 0]}
+                          animationDuration={ANIM_MS}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {user.topRepos.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top repos</CardTitle>
+                </CardHeader>
+                <CardContent>
                   <div className="flex flex-wrap gap-2">
                     {user.topRepos.map((r) => (
                       <Badge
@@ -159,12 +376,12 @@ export default function UserPage() {
                       </Badge>
                     ))}
                   </div>
-                </div>
-              )}
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             <div>
-              <h2 className="mb-2 text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 PRs authored ({userPRs.length})
               </h2>
               {userPRs.length === 0 ? (
@@ -173,6 +390,15 @@ export default function UserPage() {
                 <PRList prs={userPRs} />
               )}
             </div>
+
+            {userComments.length > 0 && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  PRs reviewed ({userComments.length})
+                </h2>
+                <PRList prs={userComments} />
+              </div>
+            )}
           </>
         )}
       </main>

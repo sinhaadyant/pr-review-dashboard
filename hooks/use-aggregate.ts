@@ -29,7 +29,9 @@ export function useAggregate(filters: Filters) {
       }
       return res.json();
     },
-    placeholderData: (previous) => previous,
+    // Note: deliberately no `placeholderData` so `data` is undefined while a
+    // new query is in flight. That gives us a simple `!data` check to render
+    // the loader on filter change and refresh.
   });
 
   const forceRefresh = useCallback(async () => {

@@ -1,5 +1,5 @@
 import { aggregate, AggregateInput } from "@/lib/aggregator";
-import { aggregateToCSV, csvFilename } from "@/lib/csv";
+import { aggregateToCSV, csvFilename, type CsvGrain } from "@/lib/csv";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import type { PRState, ReviewerType } from "@/lib/types";
@@ -46,11 +46,15 @@ export async function GET(req: Request) {
     excludeBots: sp.get("excludeBots") !== "false",
   };
 
+  const grainRaw = sp.get("grain");
+  const grain: CsvGrain =
+    grainRaw === "pr" || grainRaw === "user" ? grainRaw : "comment";
+
   try {
     const data = await aggregate(input);
-    const csv = aggregateToCSV(data);
-    const filename = csvFilename(data);
-    log.info({ filename, rows: data.prs.length }, "export.ok");
+    const csv = aggregateToCSV(data, grain);
+    const filename = csvFilename(data, grain);
+    log.info({ filename, rows: data.prs.length, grain }, "export.ok");
     return new Response(csv, {
       status: 200,
       headers: {

@@ -92,7 +92,6 @@ export class MemoryCache {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __pr_cache__: MemoryCache | undefined;
 }
 
