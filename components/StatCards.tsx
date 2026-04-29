@@ -9,11 +9,13 @@ import {
   Info,
   MessageSquare,
 } from "lucide-react";
+import { useMemo } from "react";
 import { useCountUp } from "@/hooks/use-count-up";
 import type { AggregatedResponse } from "@/lib/types";
 import { formatNumber } from "@/lib/utils";
 import { Card } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
+import { Sparkline } from "./Sparkline";
 import { Tooltip } from "./ui/tooltip";
 
 interface Props {
@@ -28,9 +30,67 @@ interface Tile {
   tone: string;
   format?: (n: number) => string;
   hint: string;
+  /** 30-day daily series for the in-tile sparkline. */
+  spark?: number[];
+}
+
+const SPARK_DAYS = 30;
+
+function computeSparkSeries(data: AggregatedResponse | undefined) {
+  const empty = new Array(SPARK_DAYS).fill(0);
+  if (!data) {
+    return {
+      total: empty,
+      merged: empty,
+      open: empty,
+      r1: empty,
+      r2: empty,
+      approvals: empty,
+      closed: empty,
+    };
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayKeys: string[] = [];
+  for (let i = SPARK_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    dayKeys.push(d.toISOString().slice(0, 10));
+  }
+  const idxOf = new Map(dayKeys.map((k, i) => [k, i]));
+  const total = new Array(SPARK_DAYS).fill(0);
+  const merged = new Array(SPARK_DAYS).fill(0);
+  const open = new Array(SPARK_DAYS).fill(0);
+  const closed = new Array(SPARK_DAYS).fill(0);
+  const r1 = new Array(SPARK_DAYS).fill(0);
+  const r2 = new Array(SPARK_DAYS).fill(0);
+  const approvals = new Array(SPARK_DAYS).fill(0);
+
+  for (const pr of data.prs) {
+    const i = idxOf.get(pr.createdAt.slice(0, 10));
+    if (i != null) {
+      total[i]++;
+      if (pr.state === "open") open[i]++;
+      else if (pr.state === "closed") closed[i]++;
+    }
+    if (pr.mergedAt) {
+      const mi = idxOf.get(pr.mergedAt.slice(0, 10));
+      if (mi != null) merged[mi]++;
+    }
+    for (const c of pr.comments) {
+      const ci = idxOf.get(c.createdAt.slice(0, 10));
+      if (ci == null) continue;
+      if (c.reviewerType === "R1") r1[ci]++;
+      else r2[ci]++;
+      if (c.reviewState === "APPROVED") approvals[ci]++;
+    }
+  }
+  return { total, merged, open, r1, r2, approvals, closed };
 }
 
 export function StatCards({ data, loading }: Props) {
+  const sparks = useMemo(() => computeSparkSeries(data), [data]);
+
   const tiles: Tile[] = [
     {
       label: "Total PRs",
@@ -38,6 +98,7 @@ export function StatCards({ data, loading }: Props) {
       icon: GitPullRequest,
       tone: "chart-1",
       hint: "Pull requests created within the active sprint window across all selected repos.",
+      spark: sparks.total,
     },
     {
       label: "Merged",
@@ -45,6 +106,7 @@ export function StatCards({ data, loading }: Props) {
       icon: GitMerge,
       tone: "success",
       hint: "PRs whose merge_commit_sha was set during the window. Excludes closed-without-merge.",
+      spark: sparks.merged,
     },
     {
       label: "Open",
@@ -52,6 +114,7 @@ export function StatCards({ data, loading }: Props) {
       icon: GitPullRequest,
       tone: "warning",
       hint: "PRs still open at the time of aggregation. Reflects current GitHub state, not historical.",
+      spark: sparks.open,
     },
     {
       label: "R1 comments",
@@ -59,6 +122,7 @@ export function StatCards({ data, loading }: Props) {
       icon: MessageSquare,
       tone: "chart-1",
       hint: "Comments by team members listed in data/team.json. Counts issue comments + review comments + APPROVED/CHANGES_REQUESTED reviews.",
+      spark: sparks.r1,
     },
     {
       label: "R2 comments",
@@ -66,6 +130,7 @@ export function StatCards({ data, loading }: Props) {
       icon: MessageSquare,
       tone: "chart-3",
       hint: "Comments by external reviewers (anyone NOT in the R1 team list). Excludes bots when 'Exclude bots' is on.",
+      spark: sparks.r2,
     },
     {
       label: "Approvals",
@@ -73,6 +138,7 @@ export function StatCards({ data, loading }: Props) {
       icon: Check,
       tone: "success",
       hint: "PR review submissions with state APPROVED. Only the most recent review per reviewer per PR counts.",
+      spark: sparks.approvals,
     },
     {
       label: "Avg time-to-first-review",
@@ -88,6 +154,7 @@ export function StatCards({ data, loading }: Props) {
       icon: GitPullRequestClosed,
       tone: "muted",
       hint: "PRs closed without merge. Often signals abandoned or rejected work.",
+      spark: sparks.closed,
     },
   ];
 
@@ -108,7 +175,7 @@ export function StatCards({ data, loading }: Props) {
             </button>
           </Tooltip>
           <div className="flex items-start justify-between">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-xs text-muted-foreground font-medium truncate">
                 {t.label}
               </div>
@@ -124,6 +191,17 @@ export function StatCards({ data, loading }: Props) {
                   />
                 )}
               </div>
+              {t.spark && t.spark.some((v) => v > 0) && (
+                <div className="mt-1.5">
+                  <Sparkline
+                    values={t.spark}
+                    width={120}
+                    height={20}
+                    color={`hsl(var(--${t.tone}))`}
+                    ariaLabel={`${t.label} 30-day trend`}
+                  />
+                </div>
+              )}
             </div>
             <div
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-transform group-hover:scale-110"

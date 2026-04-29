@@ -29,6 +29,14 @@ import { ErrorState, EmptyState } from "@/components/states/States";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAggregate } from "@/hooks/use-aggregate";
 import { useFilters } from "@/hooks/use-filters";
+import {
+  computeBestReviewers,
+  computeDevInsights,
+  computeUserHealth,
+  HEALTH_LABEL,
+  summarizeConcerns,
+} from "@/lib/intelligence";
+import { CheckCircle2, TriangleAlert, Star } from "lucide-react";
 import { formatNumber } from "@/lib/utils";
 
 const ANIM_MS = 600;
@@ -113,6 +121,48 @@ export default function UserPage() {
     ].filter((d) => d.value > 0);
   }, [user]);
 
+  const concernPie = useMemo(() => {
+    if (!user || !data) return [];
+    const givenComments = data.prs.flatMap((p) =>
+      p.comments.filter(
+        (c) => c.author.toLowerCase() === username.toLowerCase() && !c.isBot,
+      ),
+    );
+    const counts = summarizeConcerns(givenComments);
+    return [
+      {
+        name: "Functional",
+        value: counts.functional,
+        color: "hsl(var(--destructive))",
+      },
+      {
+        name: "Cosmetic",
+        value: counts.cosmetic,
+        color: "hsl(var(--chart-1))",
+      },
+      {
+        name: "Other",
+        value: counts.other,
+        color: "hsl(var(--muted-foreground))",
+      },
+    ].filter((d) => d.value > 0);
+  }, [user, data, username]);
+
+  const insights = useMemo(
+    () => (user ? computeDevInsights(user, data?.prs ?? []) : null),
+    [user, data?.prs],
+  );
+  const userHealth = useMemo(
+    () => (user ? computeUserHealth(user, data?.prs ?? []) : null),
+    [user, data?.prs],
+  );
+  const bestReviewerRank = useMemo(() => {
+    if (!user || !data) return null;
+    const top = computeBestReviewers(data.users, data.prs, 10);
+    const found = top.find((b) => b.login === user.login);
+    return found?.rank ?? null;
+  }, [user, data]);
+
   const reviewerInteractions = useMemo(() => {
     if (!data) return [];
     const counts = new Map<string, number>();
@@ -190,6 +240,31 @@ export default function UserPage() {
                     >
                       {user.isBot ? "BOT" : user.reviewerType}
                     </Badge>
+                    {userHealth && (
+                      <Badge
+                        variant={
+                          userHealth.band === "good"
+                            ? "success"
+                            : userHealth.band === "ok"
+                              ? "warning"
+                              : "destructive"
+                        }
+                        title={`Engineering health score: ${userHealth.raw}`}
+                      >
+                        {HEALTH_LABEL[userHealth.band]} health ·{" "}
+                        {userHealth.raw}
+                      </Badge>
+                    )}
+                    {bestReviewerRank && (
+                      <Badge
+                        variant="warning"
+                        className="inline-flex items-center gap-1"
+                        title={`Top reviewer rank #${bestReviewerRank}`}
+                      >
+                        <Star className="h-3 w-3 fill-current" />
+                        Top reviewer #{bestReviewerRank}
+                      </Badge>
+                    )}
                     <a
                       href={`https://github.com/${user.login}`}
                       target="_blank"
@@ -239,7 +314,67 @@ export default function UserPage() {
               </div>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {insights &&
+              (insights.strengths.length > 0 ||
+                insights.weaknesses.length > 0) && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-success" />
+                        Strengths
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {insights.strengths.length === 0 ? (
+                        <div className="text-xs text-muted-foreground italic">
+                          Nothing notable yet — this user&apos;s pattern is
+                          still forming.
+                        </div>
+                      ) : (
+                        <ul className="space-y-1.5 text-sm">
+                          {insights.strengths.map((s) => (
+                            <li
+                              key={s}
+                              className="rounded-md border border-success/20 bg-success/5 px-3 py-1.5"
+                            >
+                              {s}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <TriangleAlert className="h-4 w-4 text-warning" />
+                        Watch-outs
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {insights.weaknesses.length === 0 ? (
+                        <div className="text-xs text-muted-foreground italic">
+                          No issues detected.
+                        </div>
+                      ) : (
+                        <ul className="space-y-1.5 text-sm">
+                          {insights.weaknesses.map((s) => (
+                            <li
+                              key={s}
+                              className="rounded-md border border-warning/20 bg-warning/5 px-3 py-1.5"
+                            >
+                              {s}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card>
                 <CardHeader>
                   <CardTitle>30-day PRs opened</CardTitle>
@@ -295,6 +430,46 @@ export default function UserPage() {
                             animationDuration={ANIM_MS}
                           >
                             {r1r2Pie.map((d, i) => (
+                              <Cell
+                                key={i}
+                                fill={d.color}
+                                stroke="hsl(var(--card))"
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={TOOLTIP_STYLE} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle title="What this user's review comments focus on">
+                    Comment focus
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-40">
+                    {concernPie.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                        No comments given.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={concernPie}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={32}
+                            outerRadius={56}
+                            paddingAngle={3}
+                            animationDuration={ANIM_MS}
+                          >
+                            {concernPie.map((d, i) => (
                               <Cell
                                 key={i}
                                 fill={d.color}

@@ -1,8 +1,9 @@
 "use client";
 
-import { GitPullRequest } from "lucide-react";
+import { Command, GitPullRequest } from "lucide-react";
 import { useFilters } from "@/hooks/use-filters";
 import { AutoRefreshControl } from "./AutoRefreshControl";
+import { CommandPalette } from "./CommandPalette";
 import { DensityToggle } from "./DensityToggle";
 import { ExportButton } from "./ExportButton";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
@@ -11,6 +12,7 @@ import { SavedViews } from "./SavedViews";
 import { ShareLinkButton } from "./ShareLinkButton";
 import { SprintPicker } from "./SprintPicker";
 import { ThemeToggle } from "./ThemeToggle";
+import { Button } from "./ui/button";
 
 export function TopBar() {
   const [filters] = useFilters();
@@ -29,6 +31,7 @@ export function TopBar() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <CommandPaletteTrigger />
           <SprintPicker />
           <SavedViews />
           <AutoRefreshControl />
@@ -40,7 +43,36 @@ export function TopBar() {
         </div>
       </div>
       <KeyboardShortcuts />
+      <CommandPalette />
     </header>
+  );
+}
+
+function CommandPaletteTrigger() {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        // Reuse the global ⌘K hook.
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "k",
+            metaKey: true,
+            bubbles: true,
+          }),
+        );
+      }}
+      className="hidden md:inline-flex gap-2"
+      title="Command palette (⌘K)"
+      aria-label="Open command palette"
+    >
+      <Command className="h-3.5 w-3.5" />
+      <span className="text-muted-foreground">Search…</span>
+      <kbd className="ml-1 rounded border border-border bg-muted px-1 text-[10px] font-mono text-muted-foreground">
+        ⌘K
+      </kbd>
+    </Button>
   );
 }
 
@@ -54,6 +86,8 @@ function ScopeSubtitle() {
   else if (filters.orgs.length > 1) parts.push(`${filters.orgs.length} orgs`);
   else parts.push("All repos");
   return (
-    <div className="truncate text-xs text-muted-foreground">{parts.join(" · ")}</div>
+    <div className="truncate text-xs text-muted-foreground">
+      {parts.join(" · ")}
+    </div>
   );
 }

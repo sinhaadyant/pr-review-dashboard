@@ -1,6 +1,15 @@
 "use client";
 
-import { Filter, RotateCcw, Search, X } from "lucide-react";
+import {
+  AlertOctagon,
+  CalendarRange,
+  Clock,
+  Filter,
+  HeartCrack,
+  RotateCcw,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useFilters } from "@/hooks/use-filters";
@@ -47,6 +56,7 @@ export function FilterBar() {
     filters.users.length +
     (filters.state !== "all" ? 1 : 0) +
     (filters.reviewerType !== "all" ? 1 : 0) +
+    (filters.problematic !== "off" ? 1 : 0) +
     (filters.q ? 1 : 0);
 
   const reset = () => {
@@ -56,6 +66,7 @@ export function FilterBar() {
       users: null,
       state: null,
       reviewerType: null,
+      problematic: null,
       q: null,
       from: null,
       to: null,
@@ -63,14 +74,21 @@ export function FilterBar() {
     toast.success("Filters cleared");
   };
 
+  const toggleProblematic = (kind: "risk" | "stale" | "unhealthy") => {
+    setFilters({ problematic: filters.problematic === kind ? null : kind });
+  };
+
   // Toast a short summary whenever the *applied* filter set changes (debounced
   // so we don't spam on every keystroke in the search box).
   const lastSummary = useRef<string>("");
   useEffect(() => {
     const summary = [
-      filters.orgs.length && `${filters.orgs.length} org${filters.orgs.length === 1 ? "" : "s"}`,
-      filters.repos.length && `${filters.repos.length} repo${filters.repos.length === 1 ? "" : "s"}`,
-      filters.users.length && `${filters.users.length} user${filters.users.length === 1 ? "" : "s"}`,
+      filters.orgs.length &&
+        `${filters.orgs.length} org${filters.orgs.length === 1 ? "" : "s"}`,
+      filters.repos.length &&
+        `${filters.repos.length} repo${filters.repos.length === 1 ? "" : "s"}`,
+      filters.users.length &&
+        `${filters.users.length} user${filters.users.length === 1 ? "" : "s"}`,
       filters.state !== "all" && filters.state,
       filters.reviewerType !== "all" && `${filters.reviewerType} only`,
     ]
@@ -155,6 +173,72 @@ export function FilterBar() {
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground mr-1">
+          Quick filters:
+        </span>
+        <ProblematicChip
+          label="High risk"
+          icon={<AlertOctagon className="h-3 w-3" />}
+          active={filters.problematic === "risk"}
+          onClick={() => toggleProblematic("risk")}
+        />
+        <ProblematicChip
+          label="Stale (open >7d)"
+          icon={<Clock className="h-3 w-3" />}
+          active={filters.problematic === "stale"}
+          onClick={() => toggleProblematic("stale")}
+        />
+        <ProblematicChip
+          label="Unhealthy review"
+          icon={<HeartCrack className="h-3 w-3" />}
+          active={filters.problematic === "unhealthy"}
+          onClick={() => toggleProblematic("unhealthy")}
+        />
+
+        <span className="mx-2 hidden h-4 w-px bg-border sm:inline-block" />
+
+        <span className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground mr-1 inline-flex items-center gap-1">
+          <CalendarRange className="h-3 w-3" />
+          Time range:
+        </span>
+        <RangeChip
+          label="7d"
+          days={7}
+          activeFrom={filters.from}
+          onClick={(from, to) => setFilters({ from, to, sprint: null })}
+        />
+        <RangeChip
+          label="14d"
+          days={14}
+          activeFrom={filters.from}
+          onClick={(from, to) => setFilters({ from, to, sprint: null })}
+        />
+        <RangeChip
+          label="30d"
+          days={30}
+          activeFrom={filters.from}
+          onClick={(from, to) => setFilters({ from, to, sprint: null })}
+        />
+        <RangeChip
+          label="90d"
+          days={90}
+          activeFrom={filters.from}
+          onClick={(from, to) => setFilters({ from, to, sprint: null })}
+        />
+        {(filters.from || filters.to) && (
+          <button
+            type="button"
+            onClick={() => setFilters({ from: null, to: null })}
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+            aria-label="Clear time range"
+          >
+            <X className="h-3 w-3" />
+            range
+          </button>
+        )}
+      </div>
+
       {open && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-border pt-3">
           <OrgsFilter />
@@ -218,6 +302,74 @@ function SegmentedControl<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+function RangeChip({
+  label,
+  days,
+  activeFrom,
+  onClick,
+}: {
+  label: string;
+  days: number;
+  activeFrom: string | null;
+  onClick: (from: string, to: string) => void;
+}) {
+  // Compute the ISO from/to that this preset would set; use it to detect
+  // "active" by string-equality with the URL state (date-only resolution).
+  const today = new Date();
+  today.setUTCHours(23, 59, 59, 999);
+  const start = new Date(today);
+  start.setUTCDate(today.getUTCDate() - (days - 1));
+  start.setUTCHours(0, 0, 0, 0);
+  const fromIso = start.toISOString();
+  const toIso = today.toISOString();
+  const active = activeFrom === fromIso;
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(fromIso, toIso)}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors",
+        active
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border bg-muted/30 text-muted-foreground hover:border-primary/30 hover:text-foreground",
+      )}
+      aria-pressed={active}
+      title={`Last ${days} days`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function ProblematicChip({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      type="button"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors",
+        active
+          ? "border-warning/40 bg-warning/10 text-warning"
+          : "border-border bg-muted/30 text-muted-foreground hover:border-warning/30 hover:text-foreground",
+      )}
+      aria-pressed={active}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

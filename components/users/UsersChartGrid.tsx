@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useFilters } from "@/hooks/use-filters";
 import type { UserStats, NormalizedPR } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
@@ -32,6 +33,7 @@ const TOOLTIP = {
 };
 
 export function UsersChartGrid({ users, prs = [] }: Props) {
+  const [, setFilters] = useFilters();
   const top = useMemo(
     () =>
       [...users]
@@ -67,24 +69,55 @@ export function UsersChartGrid({ users, prs = [] }: Props) {
     [users],
   );
 
+  const onSelectUser = (login: string) => {
+    if (!login) return;
+    setFilters({ users: [login] });
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Top contributors — comments by reviewer type</CardTitle>
+          <CardTitle title="Click a row to scope the dashboard to that user">
+            Top contributors — comments by reviewer type
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={top} layout="vertical" margin={{ left: 10 }}>
+              <BarChart
+                data={top}
+                layout="vertical"
+                margin={{ left: 10 }}
+                onClick={(state) => {
+                  const label = (state as { activeLabel?: string }).activeLabel;
+                  if (label) onSelectUser(label);
+                }}
+              >
                 <defs>
                   <linearGradient id="bar-r1" x1="0" x2="1" y1="0" y2="0">
-                    <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity={0.85} />
-                    <stop offset="100%" stopColor="hsl(var(--chart-1))" stopOpacity={1} />
+                    <stop
+                      offset="0%"
+                      stopColor="hsl(var(--chart-1))"
+                      stopOpacity={0.85}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor="hsl(var(--chart-1))"
+                      stopOpacity={1}
+                    />
                   </linearGradient>
                   <linearGradient id="bar-r2" x1="0" x2="1" y1="0" y2="0">
-                    <stop offset="0%" stopColor="hsl(var(--chart-3))" stopOpacity={0.85} />
-                    <stop offset="100%" stopColor="hsl(var(--chart-3))" stopOpacity={1} />
+                    <stop
+                      offset="0%"
+                      stopColor="hsl(var(--chart-3))"
+                      stopOpacity={0.85}
+                    />
+                    <stop
+                      offset="100%"
+                      stopColor="hsl(var(--chart-3))"
+                      stopOpacity={1}
+                    />
                   </linearGradient>
                 </defs>
                 <CartesianGrid
@@ -129,7 +162,9 @@ export function UsersChartGrid({ users, prs = [] }: Props) {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Review outcomes per user</CardTitle>
+          <CardTitle title="Click a row to scope the dashboard to that user">
+            Review outcomes per user
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-80">
@@ -143,6 +178,11 @@ export function UsersChartGrid({ users, prs = [] }: Props) {
                   data={reviewOutcomes}
                   layout="vertical"
                   margin={{ left: 10 }}
+                  onClick={(state) => {
+                    const label = (state as { activeLabel?: string })
+                      .activeLabel;
+                    if (label) onSelectUser(label);
+                  }}
                 >
                   <CartesianGrid
                     horizontal={false}
@@ -296,7 +336,8 @@ function ReviewerLoadHeatmap({
                         className="rounded text-center transition-colors"
                         style={{
                           background: `hsl(var(--chart-1) / ${0.05 + opacity * 0.85})`,
-                          color: opacity > 0.5 ? "white" : "hsl(var(--foreground))",
+                          color:
+                            opacity > 0.5 ? "white" : "hsl(var(--foreground))",
                           minWidth: 36,
                           height: 28,
                         }}

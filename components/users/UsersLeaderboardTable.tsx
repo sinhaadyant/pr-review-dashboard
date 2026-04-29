@@ -1,15 +1,23 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Star } from "lucide-react";
 import { useMemo, useState } from "react";
+import {
+  computeBestReviewers,
+  computeUserHealth,
+  HEALTH_LABEL,
+  type HealthBand,
+} from "@/lib/intelligence";
 import type { NormalizedPR, UserStats } from "@/lib/types";
 import { cn, formatNumber } from "@/lib/utils";
 import { Badge } from "../ui/badge";
+import { Tooltip } from "../ui/tooltip";
 import { Highlight } from "../Highlight";
 import { UserDrawer } from "./UserDrawer";
 
 type SortKey =
   | "score"
+  | "health"
   | "prsAuthored"
   | "prsMerged"
   | "commentsGiven"
@@ -30,6 +38,31 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [activeUser, setActiveUser] = useState<UserStats | null>(null);
 
+  // Compute scores once and index by login.
+  const intel = useMemo(() => {
+    const map = new Map<
+      string,
+      { health: number; healthBand: HealthBand; isBestReviewer: boolean; bestRank?: number }
+    >();
+    for (const u of users) {
+      const h = computeUserHealth(u, prs);
+      map.set(u.login, {
+        health: h.raw,
+        healthBand: h.band,
+        isBestReviewer: false,
+      });
+    }
+    const best = computeBestReviewers(users, prs, 5);
+    best.forEach((b) => {
+      const slot = map.get(b.login);
+      if (slot) {
+        slot.isBestReviewer = true;
+        slot.bestRank = b.rank;
+      }
+    });
+    return map;
+  }, [users, prs]);
+
   const sorted = useMemo(() => {
     const q = searchQuery?.trim().toLowerCase();
     const filtered = q
@@ -41,19 +74,23 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
       : users;
     const arr = [...filtered];
     arr.sort((a, b) => {
-      const av =
-        sortKey === "score"
-          ? a.commentsGiven + a.prsAuthored
-          : (a[sortKey] ?? 0);
-      const bv =
-        sortKey === "score"
-          ? b.commentsGiven + b.prsAuthored
-          : (b[sortKey] ?? 0);
-      const cmp = (av as number) - (bv as number);
+      let av: number;
+      let bv: number;
+      if (sortKey === "score") {
+        av = a.commentsGiven + a.prsAuthored;
+        bv = b.commentsGiven + b.prsAuthored;
+      } else if (sortKey === "health") {
+        av = intel.get(a.login)?.health ?? 0;
+        bv = intel.get(b.login)?.health ?? 0;
+      } else {
+        av = (a[sortKey] ?? 0) as number;
+        bv = (b[sortKey] ?? 0) as number;
+      }
+      const cmp = av - bv;
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [users, sortKey, sortDir, searchQuery]);
+  }, [users, sortKey, sortDir, searchQuery, intel]);
 
   const onSort = (k: SortKey) => {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -64,6 +101,7 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
   };
 
   const cols: { key: SortKey; label: string; align?: "right" }[] = [
+    { key: "health", label: "Health", align: "right" },
     { key: "prsAuthored", label: "PRs", align: "right" },
     { key: "prsMerged", label: "Merged", align: "right" },
     { key: "commentsGiven", label: "Comments given", align: "right" },
@@ -74,7 +112,6 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
     { key: "avgTimeToFirstReviewHours", label: "Avg TTFR", align: "right" },
   ];
 
-  // Density-aware row height. The data-density attribute is set on <html> by useDensity().
   return (
     <>
       <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -134,80 +171,96 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
                   </td>
                 </tr>
               )}
-              {sorted.map((u, i) => (
-                <tr
-                  key={u.login}
-                  onClick={() => setActiveUser(u)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") setActiveUser(u);
-                  }}
-                  tabIndex={0}
-                  className={cn(
-                    "border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors cursor-pointer focus:outline-none focus:bg-accent/40",
-                    i % 2 === 1 && "bg-muted/20",
-                  )}
-                >
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      {u.avatarUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={u.avatarUrl}
-                          alt=""
-                          className="h-7 w-7 rounded-full"
-                        />
-                      )}
-                      <div>
-                        <div className="font-medium leading-tight">
-                          <Highlight text={u.login} query={searchQuery} />
-                        </div>
-                        {u.name && (
-                          <div className="text-xs text-muted-foreground">
-                            <Highlight text={u.name} query={searchQuery} />
-                          </div>
+              {sorted.map((u, i) => {
+                const meta = intel.get(u.login);
+                return (
+                  <tr
+                    key={u.login}
+                    onClick={() => setActiveUser(u)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") setActiveUser(u);
+                    }}
+                    tabIndex={0}
+                    className={cn(
+                      "border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors cursor-pointer focus:outline-none focus:bg-accent/40",
+                      i % 2 === 1 && "bg-muted/20",
+                    )}
+                  >
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        {u.avatarUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={u.avatarUrl}
+                            alt=""
+                            className="h-7 w-7 rounded-full"
+                          />
                         )}
+                        <div>
+                          <div className="font-medium leading-tight inline-flex items-center gap-1">
+                            <Highlight text={u.login} query={searchQuery} />
+                            {meta?.isBestReviewer && (
+                              <Tooltip
+                                content={`Top reviewer (rank #${meta.bestRank})`}
+                              >
+                                <Star
+                                  className="h-3.5 w-3.5 fill-warning text-warning"
+                                  aria-label="Top reviewer"
+                                />
+                              </Tooltip>
+                            )}
+                          </div>
+                          {u.name && (
+                            <div className="text-xs text-muted-foreground">
+                              <Highlight text={u.name} query={searchQuery} />
+                            </div>
+                          )}
+                        </div>
+                        <Badge
+                          variant={
+                            u.isBot
+                              ? "bot"
+                              : u.reviewerType === "R1"
+                                ? "r1"
+                                : "r2"
+                          }
+                        >
+                          {u.isBot ? "BOT" : u.reviewerType}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={
-                          u.isBot
-                            ? "bot"
-                            : u.reviewerType === "R1"
-                              ? "r1"
-                              : "r2"
-                        }
-                      >
-                        {u.isBot ? "BOT" : u.reviewerType}
-                      </Badge>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    {formatNumber(u.prsAuthored)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    {formatNumber(u.prsMerged)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
-                    {formatNumber(u.commentsGiven)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-chart-1">
-                    {formatNumber(u.R1_commentsGiven)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-chart-3">
-                    {formatNumber(u.R2_commentsGiven)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    {formatNumber(u.commentsReceived)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    {formatNumber(u.approvalsGiven)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
-                    {u.avgTimeToFirstReviewHours == null
-                      ? "—"
-                      : `${u.avgTimeToFirstReviewHours.toFixed(1)} h`}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <HealthCell band={meta?.healthBand} score={meta?.health} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {formatNumber(u.prsAuthored)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {formatNumber(u.prsMerged)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                      {formatNumber(u.commentsGiven)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-chart-1">
+                      {formatNumber(u.R1_commentsGiven)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-chart-3">
+                      {formatNumber(u.R2_commentsGiven)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {formatNumber(u.commentsReceived)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {formatNumber(u.approvalsGiven)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                      {u.avgTimeToFirstReviewHours == null
+                        ? "—"
+                        : `${u.avgTimeToFirstReviewHours.toFixed(1)} h`}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -219,5 +272,27 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
         onClose={() => setActiveUser(null)}
       />
     </>
+  );
+}
+
+function HealthCell({
+  band,
+  score,
+}: {
+  band?: HealthBand;
+  score?: number;
+}) {
+  if (!band) return <span className="text-muted-foreground">—</span>;
+  const variant =
+    band === "good" ? "success" : band === "ok" ? "warning" : "destructive";
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Badge variant={variant}>{HEALTH_LABEL[band]}</Badge>
+      {score != null && (
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {score}
+        </span>
+      )}
+    </span>
   );
 }

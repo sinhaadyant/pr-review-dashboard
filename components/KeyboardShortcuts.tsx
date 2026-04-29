@@ -8,8 +8,10 @@ import { useAggregate } from "@/hooks/use-aggregate";
 import { Button } from "./ui/button";
 
 const SHORTCUTS = [
+  { keys: ["⌘", "K"], description: "Open command palette (jump anywhere)" },
+  { keys: ["k"], description: "Open command palette (no modifier)" },
   { keys: ["/"], description: "Focus search" },
-  { keys: ["Esc"], description: "Clear search (when focused)" },
+  { keys: ["Esc"], description: "Close dialogs · clear search" },
   { keys: ["r"], description: "Refresh data" },
   {
     keys: ["1", "2", "3"],

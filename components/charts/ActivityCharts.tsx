@@ -18,6 +18,7 @@ import {
   ZAxis,
 } from "recharts";
 import { TrendingUp } from "lucide-react";
+import { useFilters } from "@/hooks/use-filters";
 import type { AggregatedResponse } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 
@@ -32,17 +33,25 @@ const TOOLTIP = {
 const ANIM_MS = 600;
 
 export function ActivityCharts({ data }: { data: AggregatedResponse }) {
+  const [, setFilters] = useFilters();
   const stateData = useMemo(
     () =>
       [
         {
           name: "Merged",
+          state: "merged" as const,
           value: data.stats.merged,
           color: "hsl(var(--chart-1))",
         },
-        { name: "Open", value: data.stats.open, color: "hsl(var(--success))" },
+        {
+          name: "Open",
+          state: "open" as const,
+          value: data.stats.open,
+          color: "hsl(var(--success))",
+        },
         {
           name: "Closed",
+          state: "closed" as const,
           value: data.stats.closed,
           color: "hsl(var(--muted-foreground))",
         },
@@ -127,8 +136,16 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
                   <defs>
                     {stateData.map((d, i) => (
                       <radialGradient key={i} id={`pie-grad-${i}`}>
-                        <stop offset="0%" stopColor={d.color} stopOpacity={0.95} />
-                        <stop offset="100%" stopColor={d.color} stopOpacity={0.7} />
+                        <stop
+                          offset="0%"
+                          stopColor={d.color}
+                          stopOpacity={0.95}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor={d.color}
+                          stopOpacity={0.7}
+                        />
                       </radialGradient>
                     ))}
                   </defs>
@@ -140,6 +157,11 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
                     outerRadius={85}
                     paddingAngle={2}
                     animationDuration={ANIM_MS}
+                    onClick={(d) => {
+                      const slice = d as unknown as (typeof stateData)[number];
+                      if (slice?.state) setFilters({ state: slice.state });
+                    }}
+                    cursor="pointer"
                   >
                     {stateData.map((d, i) => (
                       <Cell
@@ -174,20 +196,66 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={dailyData}>
                   <defs>
-                    <linearGradient id="grad-opened" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--chart-2))" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
+                    <linearGradient
+                      id="grad-opened"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor="hsl(var(--chart-2))"
+                        stopOpacity={0.4}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor="hsl(var(--chart-2))"
+                        stopOpacity={0}
+                      />
                     </linearGradient>
-                    <linearGradient id="grad-merged" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
+                    <linearGradient
+                      id="grad-merged"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor="hsl(var(--chart-1))"
+                        stopOpacity={0.4}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor="hsl(var(--chart-1))"
+                        stopOpacity={0}
+                      />
                     </linearGradient>
-                    <linearGradient id="grad-comments" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--chart-4))" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="hsl(var(--chart-4))" stopOpacity={0} />
+                    <linearGradient
+                      id="grad-comments"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor="hsl(var(--chart-4))"
+                        stopOpacity={0.35}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor="hsl(var(--chart-4))"
+                        stopOpacity={0}
+                      />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                  <CartesianGrid
+                    stroke="hsl(var(--border))"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="date"
                     stroke="hsl(var(--muted-foreground))"
@@ -248,15 +316,22 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                <ScatterChart
+                  margin={{ top: 8, right: 16, bottom: 4, left: 0 }}
+                >
+                  <CartesianGrid
+                    stroke="hsl(var(--border))"
+                    strokeDasharray="3 3"
+                  />
                   <XAxis
                     type="number"
                     dataKey="size"
                     name="PR size (additions + deletions)"
                     fontSize={11}
                     stroke="hsl(var(--muted-foreground))"
-                    tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
+                    tickFormatter={(v) =>
+                      v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)
+                    }
                     label={{
                       value: "PR size (lines changed)",
                       position: "insideBottom",
@@ -285,7 +360,8 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
                     contentStyle={TOOLTIP}
                     content={({ active, payload }) => {
                       if (!active || !payload?.length) return null;
-                      const p = payload[0].payload as (typeof sizeVsReviewData)[number];
+                      const p = payload[0]
+                        .payload as (typeof sizeVsReviewData)[number];
                       return (
                         <div className="rounded-md border border-border bg-card p-2 text-xs shadow-lg">
                           <div className="font-medium">
@@ -295,7 +371,8 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
                             {p.title}
                           </div>
                           <div className="mt-1.5">
-                            {p.size} lines · TTFR {p.ttfr?.toFixed(1)}h · {p.state}
+                            {p.size} lines · TTFR {p.ttfr?.toFixed(1)}h ·{" "}
+                            {p.state}
                           </div>
                         </div>
                       );
@@ -330,7 +407,9 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
                     <span className="tabular-nums">
                       <span className="text-foreground">{row.Humans}</span>
                       <span className="text-muted-foreground"> / </span>
-                      <span className="text-muted-foreground">{row.Bots} bot</span>
+                      <span className="text-muted-foreground">
+                        {row.Bots} bot
+                      </span>
                     </span>
                   </div>
                   <div className="mt-1 flex h-2 overflow-hidden rounded-full bg-muted">

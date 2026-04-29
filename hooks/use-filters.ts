@@ -22,6 +22,14 @@ export const filterParsers = {
   q: parseAsString.withDefault(""),
   excludeBots: parseAsBoolean.withDefault(true),
   tab: parseAsStringEnum(["users", "repos", "activity"]).withDefault("users"),
+  // "Problematic PR" quick-filter shortcut. Combines several conditions:
+  //   - "risk":     only PRs with high computed risk score
+  //   - "stale":    open PRs with no activity in 7+ days
+  //   - "unhealthy": PRs whose health score is "poor"
+  //   - "off":      no shortcut applied (default)
+  problematic: parseAsStringEnum(["off", "risk", "stale", "unhealthy"]).withDefault(
+    "off",
+  ),
 };
 
 export function useFilters() {

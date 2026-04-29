@@ -1,11 +1,16 @@
 "use client";
 
-import { ExternalLink, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Sparkline } from "../Sparkline";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import {
+  computeDevInsights,
+  computeUserHealth,
+  HEALTH_LABEL,
+} from "@/lib/intelligence";
 import type { NormalizedPR, UserStats } from "@/lib/types";
 import { formatNumber } from "@/lib/utils";
 
@@ -35,7 +40,18 @@ export function UserDrawer({ user, prs, onClose }: Props) {
     };
   }, [user, onClose]);
 
-  if (!user) return null;
+  // All hooks must be called unconditionally before any early return.
+  // We pass undefined-tolerant inputs and gate the actual JSX render below.
+  const insights = useMemo(
+    () => (user ? computeDevInsights(user, prs) : null),
+    [user, prs],
+  );
+  const userHealth = useMemo(
+    () => (user ? computeUserHealth(user, prs) : null),
+    [user, prs],
+  );
+
+  if (!user || !insights || !userHealth) return null;
 
   const lower = user.login.toLowerCase();
   const authored = prs.filter((p) => p.author.toLowerCase() === lower);
@@ -146,6 +162,56 @@ export function UserDrawer({ user, prs, onClose }: Props) {
         </header>
 
         <div className="space-y-5 p-5">
+          <section className="rounded-lg border border-border bg-background p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Engineering health
+              </div>
+              <Badge
+                variant={
+                  userHealth.band === "good"
+                    ? "success"
+                    : userHealth.band === "ok"
+                      ? "warning"
+                      : "destructive"
+                }
+              >
+                {HEALTH_LABEL[userHealth.band]} · {userHealth.raw}
+              </Badge>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+              <div>
+                Authored avg health:{" "}
+                <span className="text-foreground tabular-nums">
+                  {userHealth.authoredAvg}
+                </span>
+              </div>
+              <div>
+                Reviewer impact:{" "}
+                <span className="text-foreground tabular-nums">
+                  {userHealth.reviewerImpact}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {(insights.strengths.length > 0 || insights.weaknesses.length > 0) && (
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <InsightsList
+                title="Strengths"
+                items={insights.strengths}
+                tone="success"
+                icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+              />
+              <InsightsList
+                title="Watch-outs"
+                items={insights.weaknesses}
+                tone="warning"
+                icon={<TriangleAlert className="h-3.5 w-3.5" />}
+              />
+            </section>
+          )}
+
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="PRs authored" value={user.prsAuthored} />
             <Stat label="Merged" value={user.prsMerged} tone="success" />
@@ -261,6 +327,49 @@ export function UserDrawer({ user, prs, onClose }: Props) {
           </section>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function InsightsList({
+  title,
+  items,
+  tone,
+  icon,
+}: {
+  title: string;
+  items: string[];
+  tone: "success" | "warning";
+  icon: React.ReactNode;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-background p-3">
+        <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {icon}
+          {title}
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground italic">
+          Nothing notable yet.
+        </div>
+      </div>
+    );
+  }
+  const colour =
+    tone === "success" ? "border-success/30 bg-success/5" : "border-warning/30 bg-warning/5";
+  return (
+    <div className={`rounded-lg border ${colour} p-3`}>
+      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {title}
+      </div>
+      <ul className="mt-1.5 space-y-1 text-xs">
+        {items.map((s) => (
+          <li key={s} className="leading-snug">
+            {s}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
