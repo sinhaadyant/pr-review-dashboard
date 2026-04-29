@@ -31,6 +31,13 @@ const TOOLTIP = {
 };
 
 const ANIM_MS = 600;
+/**
+ * Hard cap for the "Activity over time" chart. Without this the chart can
+ * become unreadable + slow to render on very wide windows (e.g. 12-month
+ * custom range). Truncates to the most recent N days; rendered as a small
+ * note on the card so users know the chart is bounded.
+ */
+const MAX_DAILY_BUCKETS = 90;
 
 export function ActivityCharts({ data }: { data: AggregatedResponse }) {
   const [, setFilters] = useFilters();
@@ -59,7 +66,7 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
     [data.stats.merged, data.stats.open, data.stats.closed],
   );
 
-  const dailyData = useMemo(() => {
+  const { dailyData, truncated, totalDays } = useMemo(() => {
     const buckets = new Map<
       string,
       { date: string; opened: number; merged: number; comments: number }
@@ -77,9 +84,13 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
       if (pr.mergedAt) ensure(pr.mergedAt.slice(0, 10)).merged++;
       for (const c of pr.comments) ensure(c.createdAt.slice(0, 10)).comments++;
     }
-    return Array.from(buckets.values()).sort((a, b) =>
+    const sorted = Array.from(buckets.values()).sort((a, b) =>
       a.date.localeCompare(b.date),
     );
+    const total = sorted.length;
+    const trimmed =
+      total > MAX_DAILY_BUCKETS ? sorted.slice(-MAX_DAILY_BUCKETS) : sorted;
+    return { dailyData: trimmed, truncated: total > MAX_DAILY_BUCKETS, totalDays: total };
   }, [data.prs]);
 
   const sizeVsReviewData = useMemo(() => {
@@ -181,9 +192,16 @@ export function ActivityCharts({ data }: { data: AggregatedResponse }) {
       </Card>
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle className="flex items-center gap-1.5">
-            <TrendingUp className="h-3.5 w-3.5" />
-            Activity over time
+          <CardTitle className="flex items-center justify-between gap-1.5">
+            <span className="inline-flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Activity over time
+            </span>
+            {truncated && (
+              <span className="text-[11px] font-normal text-muted-foreground">
+                Showing last {MAX_DAILY_BUCKETS} of {totalDays} days
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>

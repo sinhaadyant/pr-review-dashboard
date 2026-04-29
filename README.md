@@ -48,6 +48,7 @@ See `.env.example` for the full list. Key vars:
 
 - `GITHUB_TOKEN` (required, single PAT) — fine-grained or classic PAT
 - `GITHUB_TOKENS` (optional) — comma-separated list of PATs for round-robin rotation; effective rate-limit becomes `5000 × N`
+- `GITHUB_USE_GRAPHQL` (optional, default `false`) — when `true`, the aggregator hot path fetches PRs + comments + reviews in a single GraphQL query per page (≈50–98% fewer requests; falls back to REST automatically on failure)
 - `MAX_REPOS_PER_AGGREGATION` (default 50) — caps fan-out per cache miss
 - `MAX_PRS_PER_REPO` (default 1000) — caps per-repo PR fetch
 - `EXTRA_PUBLIC_REPOS` — comma-separated `owner/repo` list to inject for demos

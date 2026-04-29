@@ -8,15 +8,19 @@ import {
   GitPullRequestClosed,
   Info,
   MessageSquare,
+  Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { useMemo } from "react";
 import { useCountUp } from "@/hooks/use-count-up";
+import { useNumberAnimMode, type NumberAnimMode } from "@/hooks/use-number-anim";
 import type { AggregatedResponse } from "@/lib/types";
-import { formatNumber } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 import { Card } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 import { Sparkline } from "./Sparkline";
 import { Tooltip } from "./ui/tooltip";
+import { FlipNumber } from "./FlipNumber";
 
 interface Props {
   data?: AggregatedResponse;
@@ -90,6 +94,7 @@ function computeSparkSeries(data: AggregatedResponse | undefined) {
 
 export function StatCards({ data, loading }: Props) {
   const sparks = useMemo(() => computeSparkSeries(data), [data]);
+  const [animMode, setAnimMode] = useNumberAnimMode();
 
   const tiles: Tile[] = [
     {
@@ -159,8 +164,12 @@ export function StatCards({ data, loading }: Props) {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 stagger">
-      {tiles.map((t) => (
+    <div className="space-y-2">
+      <div className="flex items-center justify-end">
+        <NumberAnimToggle value={animMode} onChange={setAnimMode} />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 stagger">
+        {tiles.map((t) => (
         <Card
           key={t.label}
           className="group relative p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-[hsl(var(--chart-1)/0.3)]"
@@ -182,6 +191,13 @@ export function StatCards({ data, loading }: Props) {
               <div className="mt-1 text-2xl font-semibold tabular-nums">
                 {loading || data == null ? (
                   <Skeleton className="h-8 w-16" />
+                ) : animMode === "flip" && t.format == null ? (
+                  // FlipNumber works best with integer values; fall back to
+                  // the tween for fractional metrics like "Avg TTFR".
+                  <FlipNumber
+                    value={t.value ?? 0}
+                    format={(n: number) => formatNumber(Math.round(n))}
+                  />
                 ) : (
                   <AnimatedNumber
                     value={t.value ?? 0}
@@ -214,8 +230,50 @@ export function StatCards({ data, loading }: Props) {
             </div>
           </div>
         </Card>
-      ))}
+        ))}
+      </div>
     </div>
+  );
+}
+
+function NumberAnimToggle({
+  value,
+  onChange,
+}: {
+  value: NumberAnimMode;
+  onChange: (m: NumberAnimMode) => void;
+}) {
+  const opts: { id: NumberAnimMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: "tween", label: "Tween", icon: TrendingUp },
+    { id: "flip", label: "Flip", icon: Sparkles },
+  ];
+  return (
+    <Tooltip content="Switch number animation. Tween = ease-out count-up, Flip = per-digit shuffle. Saved to localStorage.">
+      <div
+        role="radiogroup"
+        aria-label="Number animation mode"
+        className="inline-flex h-6 items-center rounded-full border border-border bg-muted/40 p-0.5 text-[11px]"
+      >
+        {opts.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={value === o.id}
+            onClick={() => onChange(o.id)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 h-5 transition-colors",
+              value === o.id
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <o.icon className="h-3 w-3" />
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </Tooltip>
   );
 }
 

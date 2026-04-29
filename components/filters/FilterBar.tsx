@@ -246,7 +246,9 @@ export function FilterBar() {
         </div>
       )}
 
-      {(filters.orgs.length > 0 || filters.repos.length > 0) && (
+      {(filters.orgs.length > 0 ||
+        filters.repos.length > 0 ||
+        filters.users.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
           {filters.orgs.map((o) => (
             <Chip
@@ -266,6 +268,17 @@ export function FilterBar() {
               onRemove={() =>
                 setFilters({
                   repos: filters.repos.filter((x) => x !== r),
+                })
+              }
+            />
+          ))}
+          {filters.users.map((u) => (
+            <Chip
+              key={`user-${u}`}
+              label={`user: ${u}`}
+              onRemove={() =>
+                setFilters({
+                  users: filters.users.filter((x) => x !== u),
                 })
               }
             />
@@ -374,13 +387,30 @@ function ProblematicChip({
 }
 
 function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  // Local "leaving" state lets us play the collapse animation BEFORE the
+  // parent removes the entry from filters[]. Without this the chip pops out
+  // instantly because React unmounts before any CSS transition can run.
+  const [leaving, setLeaving] = useState(false);
+  const handleRemove = () => {
+    if (leaving) return;
+    setLeaving(true);
+    // CSS animation duration matches `chip-out` keyframe (180 ms).
+    window.setTimeout(onRemove, 170);
+  };
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 pl-2.5 pr-1 py-0.5 text-xs">
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 pl-2.5 pr-1 py-0.5 text-xs",
+        leaving && "animate-chip-out",
+      )}
+      aria-hidden={leaving || undefined}
+    >
       {label}
       <button
-        onClick={onRemove}
+        onClick={handleRemove}
         className="rounded-full p-0.5 hover:bg-accent"
-        aria-label="Remove filter"
+        aria-label={`Remove filter ${label}`}
+        disabled={leaving}
       >
         <X className="h-3 w-3" />
       </button>

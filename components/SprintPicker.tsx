@@ -1,7 +1,7 @@
 "use client";
 
-import { CalendarRange, ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CalendarRange, ChevronDown, GitCompare } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFilters } from "@/hooks/use-filters";
 import { useConfig } from "@/hooks/use-discover";
 import { cn } from "@/lib/utils";
@@ -25,21 +25,58 @@ export function SprintPicker() {
   const active = config?.sprints.find((s) => s.id === activeId);
   const isCustom = !!(filters.from && filters.to);
 
+  // Find the sprint immediately preceding the active one, sorted by startDate
+  // desc. Used for the "Compare with previous" shortcut.
+  const previousSprintId = useMemo(() => {
+    if (!config) return null;
+    const sorted = [...config.sprints].sort((a, b) =>
+      Date.parse(b.startDate) - Date.parse(a.startDate),
+    );
+    const idx = sorted.findIndex((s) => s.id === activeId);
+    if (idx < 0 || idx >= sorted.length - 1) return null;
+    return sorted[idx + 1].id;
+  }, [config, activeId]);
+
+  const inCompare = !!filters.compareWith;
+
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 h-9 text-sm font-medium hover:bg-accent transition-colors"
-      >
-        <CalendarRange className="h-4 w-4 text-muted-foreground" />
-        <span className="truncate max-w-56">
-          {isCustom
-            ? `${filters.from} → ${filters.to}`
-            : (active?.name ?? "Pick sprint")}
-        </span>
-        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
+      <div className="inline-flex items-center">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-2 rounded-l-md rounded-r-none border border-r-0 border-border bg-background px-3 h-9 text-sm font-medium hover:bg-accent transition-colors"
+        >
+          <CalendarRange className="h-4 w-4 text-muted-foreground" />
+          <span className="truncate max-w-56">
+            {isCustom
+              ? `${filters.from} → ${filters.to}`
+              : (active?.name ?? "Pick sprint")}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+        {(previousSprintId || inCompare) && (
+          <button
+            type="button"
+            onClick={() =>
+              setFilters({
+                compareWith: inCompare ? null : previousSprintId,
+              })
+            }
+            className={cn(
+              "inline-flex items-center gap-1 rounded-r-md rounded-l-none border border-border h-9 px-2 text-xs font-medium transition-colors",
+              inCompare
+                ? "bg-primary/15 text-primary border-primary/40"
+                : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground",
+            )}
+            title={inCompare ? "Stop comparing" : "Compare with previous sprint"}
+            aria-pressed={inCompare}
+          >
+            <GitCompare className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{inCompare ? "Stop" : "Compare"}</span>
+          </button>
+        )}
+      </div>
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-72 rounded-lg border border-border bg-card shadow-xl animate-fade-in">
           <div className="p-1">

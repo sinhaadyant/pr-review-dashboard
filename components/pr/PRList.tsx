@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   ExternalLink,
+  Filter as FilterIcon,
   GitMerge,
   GitPullRequest,
   GitPullRequestClosed,
@@ -17,6 +18,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { useFilters } from "@/hooks/use-filters";
 import {
   classifyComment,
   computeHealth,
@@ -121,6 +124,7 @@ function PRRow({
   searchQuery?: string;
   onToggle: () => void;
 }) {
+  const [filters, setFilters] = useFilters();
   const totalChange = pr.additions + pr.deletions;
   const addPct = totalChange === 0 ? 0 : (pr.additions / totalChange) * 100;
   const risk = useMemo(() => computeRisk(pr), [pr]);
@@ -129,6 +133,25 @@ function PRRow({
     () => summarizeConcerns(pr.comments.filter((c) => !c.isBot)),
     [pr.comments],
   );
+
+  const isAuthorFiltered = filters.users
+    .map((u) => u.toLowerCase())
+    .includes(pr.author.toLowerCase());
+
+  const filterByAuthor = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isAuthorFiltered) {
+      setFilters({
+        users: filters.users.filter(
+          (u) => u.toLowerCase() !== pr.author.toLowerCase(),
+        ),
+      });
+      toast.message(`Cleared author filter`, { description: `Removed ${pr.author}` });
+    } else {
+      setFilters({ users: [...filters.users, pr.author] });
+      toast.success(`Filtering by ${pr.author}`);
+    }
+  };
 
   return (
     <div>
@@ -171,7 +194,38 @@ function PRRow({
               reasons={health.reasons}
             />
             <span className="text-xs text-muted-foreground">
-              by <Highlight text={pr.author} query={searchQuery} />
+              by{" "}
+              <Tooltip
+                content={
+                  isAuthorFiltered
+                    ? `Click to clear filter on ${pr.author}`
+                    : `Click to filter by ${pr.author}`
+                }
+              >
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={filterByAuthor}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      filterByAuthor(e as unknown as React.MouseEvent);
+                    }
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-0.5 rounded px-1 -mx-1 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors",
+                    isAuthorFiltered && "bg-primary/10 text-primary",
+                  )}
+                  aria-label={
+                    isAuthorFiltered
+                      ? `Clear author filter for ${pr.author}`
+                      : `Filter by author ${pr.author}`
+                  }
+                >
+                  <FilterIcon className="h-2.5 w-2.5 opacity-70" />
+                  <Highlight text={pr.author} query={searchQuery} />
+                </span>
+              </Tooltip>
             </span>
           </div>
           <div className="truncate text-sm font-medium">

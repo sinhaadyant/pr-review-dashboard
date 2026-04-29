@@ -1,12 +1,14 @@
 "use client";
 
 import { Filter as FilterIcon, RotateCcw } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActiveScopeBanner } from "@/components/ActiveScopeBanner";
 import { ActivityCharts } from "@/components/charts/ActivityCharts";
 import { CommentClassificationCharts } from "@/components/charts/CommentClassificationCharts";
 import { ReviewActivityHeatmap } from "@/components/charts/ReviewActivityHeatmap";
 import { RiskHealthQuadrant } from "@/components/charts/RiskHealthQuadrant";
+import { CompareDeltaStrip } from "@/components/CompareDeltaStrip";
+import { Confetti } from "@/components/Confetti";
 import { DashboardHero } from "@/components/DashboardHero";
 import { FilterBar } from "@/components/filters/FilterBar";
 import { Footer } from "@/components/Footer";
@@ -32,6 +34,8 @@ import { BestReviewersPanel } from "@/components/users/BestReviewersPanel";
 import { UsersChartGrid } from "@/components/users/UsersChartGrid";
 import { UsersLeaderboardTable } from "@/components/users/UsersLeaderboardTable";
 import { useAggregate } from "@/hooks/use-aggregate";
+import { useCompareAggregate } from "@/hooks/use-compare-aggregate";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useConfig, useDiscover } from "@/hooks/use-discover";
 import { useFilters } from "@/hooks/use-filters";
 import { useNow } from "@/hooks/use-now";
@@ -60,6 +64,15 @@ export default function Home() {
     return sprint?.name ?? sprintId ?? "the active sprint";
   }, [configQuery.data, filters.sprint]);
 
+  // Debounced text search — keeps keystroke latency snappy on large PR lists.
+  const debouncedQ = useDebouncedValue(filters.q ?? "", 220);
+
+  // Side-by-side compare with another sprint (defaults to the previous one in
+  // sprint.json when the user clicks "Compare with previous"). Lives in URL
+  // state via filters.compareWith.
+  const compareSprintId = filters.compareWith ?? null;
+  const compareQuery = useCompareAggregate(filters, compareSprintId);
+
   // Apply free-text search + "Problematic" quick-filter on top of the data the
   // server already filtered. These are pure client-side derivations so they
   // can't trigger an extra fetch.
@@ -67,8 +80,8 @@ export default function Home() {
     if (!shownData) return [];
     let out = shownData.prs;
 
-    if (filters.q) {
-      const q = filters.q.toLowerCase();
+    if (debouncedQ) {
+      const q = debouncedQ.toLowerCase();
       out = out.filter(
         (p) =>
           p.title.toLowerCase().includes(q) ||
@@ -94,7 +107,49 @@ export default function Home() {
     }
 
     return out;
-  }, [shownData, filters.q, filters.problematic, now]);
+  }, [shownData, debouncedQ, filters.problematic, now]);
+
+  // Confetti celebration: trigger ONCE per (sprint+filter combo) when the
+  // currently-loaded data set has > 0 PRs and ALL of them are merged. Stored
+  // in localStorage so navigating away/back doesn't re-trigger.
+  const sprintKey = useMemo(
+    () =>
+      `${filters.sprint ?? configQuery.data?.activeSprintId ?? "active"}:` +
+      `${filters.from ?? ""}:${filters.to ?? ""}:` +
+      `${filters.repos.slice().sort().join(",")}:` +
+      `${filters.orgs.slice().sort().join(",")}`,
+    [
+      filters.sprint,
+      filters.from,
+      filters.to,
+      filters.repos,
+      filters.orgs,
+      configQuery.data?.activeSprintId,
+    ],
+  );
+  const [celebrating, setCelebrating] = useState(false);
+  useEffect(() => {
+    if (!shownData) return;
+    if (typeof window === "undefined") return;
+    const stats = shownData.stats;
+    const fullySprint =
+      stats.totalPRs > 0 &&
+      stats.merged === stats.totalPRs &&
+      stats.open === 0 &&
+      stats.closed === 0;
+    if (!fullySprint) return;
+    const seenKey = `pr-dashboard:confetti-shown:${sprintKey}`;
+    try {
+      if (window.localStorage.getItem(seenKey)) return;
+      window.localStorage.setItem(seenKey, String(Date.now()));
+    } catch {
+      // ignore storage failures
+    }
+    // Defer the setState into an rAF so it doesn't fire synchronously during
+    // the effect body (React 19 strict purity rule).
+    const raf = requestAnimationFrame(() => setCelebrating(true));
+    return () => cancelAnimationFrame(raf);
+  }, [shownData, sprintKey]);
 
   // Derive trend insights without an extra API call by splitting the existing
   // PR set in half by date.
@@ -125,6 +180,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {celebrating && <Confetti onDone={() => setCelebrating(false)} />}
       <TopProgressBar active={isFetching} />
       <TopBar />
       <main className="mx-auto w-full max-w-[1400px] flex-1 px-6 py-6 space-y-6 animate-page-in">
@@ -143,6 +199,21 @@ export default function Home() {
             )}
 
             <StatCards data={shownData} loading={showLoader} />
+
+            {shownData && compareSprintId && compareQuery.data && (
+              <CompareDeltaStrip
+                current={shownData}
+                compare={compareQuery.data}
+                compareSprintId={compareSprintId}
+                compareLabel={
+                  configQuery.data?.sprints.find(
+                    (s) => s.id === compareSprintId,
+                  )?.name ?? compareSprintId
+                }
+                onClear={() => setFilters({ compareWith: null })}
+                isFetching={compareQuery.isFetching}
+              />
+            )}
 
             {shownData && trendInsights.insights.length > 0 && (
               <InsightStrip
@@ -206,7 +277,7 @@ export default function Home() {
                       <UsersLeaderboardTable
                         users={shownData.users}
                         prs={shownData.prs}
-                        searchQuery={filters.q}
+                        searchQuery={debouncedQ}
                       />
                     </div>
                   )}
@@ -227,7 +298,7 @@ export default function Home() {
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <StalePRRadar prs={shownData.prs} />
                         <div className="lg:col-span-1">
-                          <PRList prs={filteredPRs} searchQuery={filters.q} />
+                          <PRList prs={filteredPRs} searchQuery={debouncedQ} />
                         </div>
                       </div>
                     </div>

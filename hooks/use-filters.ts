@@ -30,6 +30,10 @@ export const filterParsers = {
   problematic: parseAsStringEnum(["off", "risk", "stale", "unhealthy"]).withDefault(
     "off",
   ),
+  // Sprint id to compare the current view against. When set, the dashboard
+  // fires a second `/api/github/aggregate` request with `sprint=<id>` and
+  // shows a side-by-side delta strip above the main content.
+  compareWith: parseAsString,
 };
 
 export function useFilters() {

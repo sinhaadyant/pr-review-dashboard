@@ -390,9 +390,12 @@ export function CommandPalette() {
     return out;
   }, [filtered]);
 
-  // Reset active when filtered list changes
+  // Reset active when filtered list changes. Defer through rAF so the
+  // setState doesn't run synchronously inside the effect body (React 19
+  // strict purity rule, react-hooks/set-state-in-effect).
   useEffect(() => {
-    setActive(0);
+    const raf = requestAnimationFrame(() => setActive(0));
+    return () => cancelAnimationFrame(raf);
   }, [query, filtered.length]);
 
   // Keep active item visible

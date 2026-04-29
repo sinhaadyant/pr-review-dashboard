@@ -19,6 +19,7 @@ import {
   listReviewComments,
   listReviews,
 } from "./github";
+import { listRepoPRsGraphQL } from "./github-graphql";
 import { logger } from "./logger";
 import type {
   AggregatedResponse,
@@ -37,6 +38,7 @@ import { stableHash } from "./utils";
 
 const MAX_REPOS = Number(process.env.MAX_REPOS_PER_AGGREGATION ?? 50);
 const MAX_PRS_PER_REPO = Number(process.env.MAX_PRS_PER_REPO ?? 1000);
+const USE_GRAPHQL = process.env.GITHUB_USE_GRAPHQL === "true";
 
 export interface AggregateInput {
   orgs?: string[];
@@ -246,6 +248,40 @@ async function fetchRepoPRs(
   excludeBots: boolean,
 ): Promise<NormalizedPR[]> {
   const t0 = Date.now();
+
+  if (USE_GRAPHQL) {
+    try {
+      const detailed = await listRepoPRsGraphQL({
+        owner: repo.owner,
+        repo: repo.name,
+        since: windowStart,
+        until: windowEnd,
+        excludeBots,
+        maxPRs: MAX_PRS_PER_REPO,
+      });
+      logger.info(
+        {
+          repo: repo.fullName,
+          prs: detailed.length,
+          ms: Date.now() - t0,
+          via: "graphql",
+        },
+        "repo.aggregated",
+      );
+      return detailed;
+    } catch (err) {
+      // GraphQL endpoint failures (5xx, rate-limit, schema regression) fall
+      // back to the REST path so a single bad PR doesn't break aggregation.
+      logger.warn(
+        {
+          repo: repo.fullName,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "graphql.fallback_to_rest",
+      );
+    }
+  }
+
   const prs = await listPRsInWindow({
     owner: repo.owner,
     repo: repo.name,
@@ -263,7 +299,12 @@ async function fetchRepoPRs(
     ),
   );
   logger.info(
-    { repo: repo.fullName, prs: detailed.length, ms: Date.now() - t0 },
+    {
+      repo: repo.fullName,
+      prs: detailed.length,
+      ms: Date.now() - t0,
+      via: "rest",
+    },
     "repo.aggregated",
   );
   return detailed;

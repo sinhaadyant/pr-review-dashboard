@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ChevronsUpDown, Star } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, GripVertical, RotateCcw, Star } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
   computeBestReviewers,
   computeUserHealth,
@@ -13,11 +14,13 @@ import { cn, formatNumber } from "@/lib/utils";
 import { Badge } from "../ui/badge";
 import { Tooltip } from "../ui/tooltip";
 import { Highlight } from "../Highlight";
+import { Sparkline } from "../Sparkline";
 import { UserDrawer } from "./UserDrawer";
 
 type SortKey =
   | "score"
   | "health"
+  | "activity14d"
   | "prsAuthored"
   | "prsMerged"
   | "commentsGiven"
@@ -33,10 +36,108 @@ interface Props {
   searchQuery?: string;
 }
 
+const SPARK_DAYS = 14;
+
+const COLUMN_DEFS: { key: SortKey; label: string; align?: "right" }[] = [
+  { key: "health", label: "Health", align: "right" },
+  { key: "activity14d", label: "14d", align: "right" },
+  { key: "prsAuthored", label: "PRs", align: "right" },
+  { key: "prsMerged", label: "Merged", align: "right" },
+  { key: "commentsGiven", label: "Comments given", align: "right" },
+  { key: "R1_commentsGiven", label: "R1", align: "right" },
+  { key: "R2_commentsGiven", label: "R2", align: "right" },
+  { key: "commentsReceived", label: "Received", align: "right" },
+  { key: "approvalsGiven", label: "Approvals", align: "right" },
+  { key: "avgTimeToFirstReviewHours", label: "Avg TTFR", align: "right" },
+];
+
+const DEFAULT_ORDER: SortKey[] = COLUMN_DEFS.map((c) => c.key);
+const COLUMN_ORDER_KEY = "pr-dashboard:leaderboard-cols";
+
+function parseOrder(raw: string | null): SortKey[] {
+  if (!raw) return DEFAULT_ORDER;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_ORDER;
+    const valid = parsed.filter((k): k is SortKey =>
+      DEFAULT_ORDER.includes(k as SortKey),
+    );
+    // Append any newly-introduced columns that weren't in the persisted order
+    // so users don't lose them after an upgrade.
+    for (const k of DEFAULT_ORDER) {
+      if (!valid.includes(k)) valid.push(k);
+    }
+    return valid;
+  } catch {
+    return DEFAULT_ORDER;
+  }
+}
+
+function computeUserSparkSeries(prs: NormalizedPR[]): Map<string, number[]> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayKeys: string[] = [];
+  for (let i = SPARK_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    dayKeys.push(d.toISOString().slice(0, 10));
+  }
+  const idxOf = new Map(dayKeys.map((k, i) => [k, i]));
+  const out = new Map<string, number[]>();
+
+  const ensure = (login: string) => {
+    const lower = login.toLowerCase();
+    let arr = out.get(lower);
+    if (!arr) {
+      arr = new Array(SPARK_DAYS).fill(0);
+      out.set(lower, arr);
+    }
+    return arr;
+  };
+
+  for (const pr of prs) {
+    const i = idxOf.get(pr.createdAt.slice(0, 10));
+    if (i != null) ensure(pr.author)[i]++;
+    for (const c of pr.comments) {
+      const ci = idxOf.get(c.createdAt.slice(0, 10));
+      if (ci == null) continue;
+      ensure(c.author)[ci]++;
+    }
+  }
+  return out;
+}
+
 export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [activeUser, setActiveUser] = useState<UserStats | null>(null);
+
+  const [columnOrder, setColumnOrder] = useLocalStorage<SortKey[]>(
+    COLUMN_ORDER_KEY,
+    parseOrder,
+    DEFAULT_ORDER,
+  );
+
+  // Drag-and-drop column reorder. We track which column key is being dragged
+  // and which column key the cursor is currently over so we can render a
+  // drop-indicator on the target.
+  const [dragKey, setDragKey] = useState<SortKey | null>(null);
+  const [overKey, setOverKey] = useState<SortKey | null>(null);
+  const draggingRef = useRef(false);
+
+  const colsByKey = useMemo(
+    () => new Map(COLUMN_DEFS.map((c) => [c.key, c])),
+    [],
+  );
+  const cols = useMemo(
+    () => columnOrder.map((k) => colsByKey.get(k)).filter(Boolean) as typeof COLUMN_DEFS,
+    [columnOrder, colsByKey],
+  );
+
+  const isReordered = useMemo(
+    () => columnOrder.some((k, i) => k !== DEFAULT_ORDER[i]),
+    [columnOrder],
+  );
 
   // Compute scores once and index by login.
   const intel = useMemo(() => {
@@ -63,6 +164,18 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
     return map;
   }, [users, prs]);
 
+  const sparkByUser = useMemo(() => computeUserSparkSeries(prs), [prs]);
+  const activitySumByUser = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [login, series] of sparkByUser) {
+      map.set(
+        login,
+        series.reduce((a, b) => a + b, 0),
+      );
+    }
+    return map;
+  }, [sparkByUser]);
+
   const sorted = useMemo(() => {
     const q = searchQuery?.trim().toLowerCase();
     const filtered = q
@@ -82,6 +195,9 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
       } else if (sortKey === "health") {
         av = intel.get(a.login)?.health ?? 0;
         bv = intel.get(b.login)?.health ?? 0;
+      } else if (sortKey === "activity14d") {
+        av = activitySumByUser.get(a.login.toLowerCase()) ?? 0;
+        bv = activitySumByUser.get(b.login.toLowerCase()) ?? 0;
       } else {
         av = (a[sortKey] ?? 0) as number;
         bv = (b[sortKey] ?? 0) as number;
@@ -90,9 +206,10 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [users, sortKey, sortDir, searchQuery, intel]);
+  }, [users, sortKey, sortDir, searchQuery, intel, activitySumByUser]);
 
   const onSort = (k: SortKey) => {
+    if (draggingRef.current) return;
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
       setSortKey(k);
@@ -100,21 +217,35 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
     }
   };
 
-  const cols: { key: SortKey; label: string; align?: "right" }[] = [
-    { key: "health", label: "Health", align: "right" },
-    { key: "prsAuthored", label: "PRs", align: "right" },
-    { key: "prsMerged", label: "Merged", align: "right" },
-    { key: "commentsGiven", label: "Comments given", align: "right" },
-    { key: "R1_commentsGiven", label: "R1", align: "right" },
-    { key: "R2_commentsGiven", label: "R2", align: "right" },
-    { key: "commentsReceived", label: "Received", align: "right" },
-    { key: "approvalsGiven", label: "Approvals", align: "right" },
-    { key: "avgTimeToFirstReviewHours", label: "Avg TTFR", align: "right" },
-  ];
+  const reorderColumn = (from: SortKey, to: SortKey) => {
+    if (from === to) return;
+    const next = columnOrder.slice();
+    const fromIdx = next.indexOf(from);
+    const toIdx = next.indexOf(to);
+    if (fromIdx < 0 || toIdx < 0) return;
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, from);
+    setColumnOrder(next);
+  };
+
+  const resetColumns = () => setColumnOrder(DEFAULT_ORDER);
 
   return (
     <>
       <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {isReordered && (
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+            <span>Custom column order applied.</span>
+            <button
+              type="button"
+              onClick={resetColumns}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-accent hover:text-foreground"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset columns
+            </button>
+          </div>
+        )}
         <div className="max-h-[70vh] overflow-y-auto overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10">
@@ -122,42 +253,89 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
                 <th className="px-4 py-2.5 font-medium data-[density=compact]:py-1.5">
                   User
                 </th>
-                {cols.map((c) => (
-                  <th
-                    key={c.key}
-                    scope="col"
-                    aria-sort={
-                      sortKey === c.key
-                        ? sortDir === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : "none"
-                    }
-                    className={cn(
-                      "px-3 py-2.5 font-medium cursor-pointer select-none hover:text-foreground",
-                      c.align === "right" && "text-right",
-                    )}
-                    onClick={() => onSort(c.key)}
-                  >
-                    <span
+                {cols.map((c) => {
+                  const isDragging = dragKey === c.key;
+                  const isOver = overKey === c.key && dragKey && dragKey !== c.key;
+                  return (
+                    <th
+                      key={c.key}
+                      scope="col"
+                      draggable
+                      aria-sort={
+                        sortKey === c.key
+                          ? sortDir === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
                       className={cn(
-                        "inline-flex items-center gap-1",
-                        c.align === "right" && "justify-end",
+                        "group px-3 py-2.5 font-medium select-none cursor-pointer hover:text-foreground transition-colors",
+                        c.align === "right" && "text-right",
+                        isDragging && "opacity-40",
+                        isOver && "bg-primary/10 text-foreground",
                       )}
+                      onDragStart={(e) => {
+                        draggingRef.current = true;
+                        setDragKey(c.key);
+                        e.dataTransfer.effectAllowed = "move";
+                        // Some browsers require setData to even start a drag.
+                        e.dataTransfer.setData("text/plain", c.key);
+                      }}
+                      onDragEnter={() => setOverKey(c.key)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                      }}
+                      onDragLeave={(e) => {
+                        // Only clear if leaving the th entirely (not entering a child).
+                        if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+                          setOverKey((k) => (k === c.key ? null : k));
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (dragKey) reorderColumn(dragKey, c.key);
+                        setDragKey(null);
+                        setOverKey(null);
+                        // Defer the click suppression flag so onClick fired by the
+                        // mouseup doesn't accidentally trigger sort.
+                        setTimeout(() => {
+                          draggingRef.current = false;
+                        }, 0);
+                      }}
+                      onDragEnd={() => {
+                        setDragKey(null);
+                        setOverKey(null);
+                        setTimeout(() => {
+                          draggingRef.current = false;
+                        }, 0);
+                      }}
+                      onClick={() => onSort(c.key)}
                     >
-                      {c.label}
-                      {sortKey === c.key ? (
-                        sortDir === "asc" ? (
-                          <ArrowUp className="h-3 w-3" />
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1",
+                          c.align === "right" && "justify-end",
+                        )}
+                      >
+                        <GripVertical
+                          className="h-3 w-3 cursor-grab text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-hidden
+                        />
+                        {c.label}
+                        {sortKey === c.key ? (
+                          sortDir === "asc" ? (
+                            <ArrowUp className="h-3 w-3" />
+                          ) : (
+                            <ArrowDown className="h-3 w-3" />
+                          )
                         ) : (
-                          <ArrowDown className="h-3 w-3" />
-                        )
-                      ) : (
-                        <ChevronsUpDown className="h-3 w-3 opacity-40" />
-                      )}
-                    </span>
-                  </th>
-                ))}
+                          <ChevronsUpDown className="h-3 w-3 opacity-40" />
+                        )}
+                      </span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -173,6 +351,7 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
               )}
               {sorted.map((u, i) => {
                 const meta = intel.get(u.login);
+                const spark = sparkByUser.get(u.login.toLowerCase()) ?? [];
                 return (
                   <tr
                     key={u.login}
@@ -229,35 +408,17 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
                         </Badge>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <HealthCell band={meta?.healthBand} score={meta?.health} />
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatNumber(u.prsAuthored)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatNumber(u.prsMerged)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
-                      {formatNumber(u.commentsGiven)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-chart-1">
-                      {formatNumber(u.R1_commentsGiven)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-chart-3">
-                      {formatNumber(u.R2_commentsGiven)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatNumber(u.commentsReceived)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
-                      {formatNumber(u.approvalsGiven)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
-                      {u.avgTimeToFirstReviewHours == null
-                        ? "—"
-                        : `${u.avgTimeToFirstReviewHours.toFixed(1)} h`}
-                    </td>
+                    {cols.map((c) => (
+                      <td
+                        key={c.key}
+                        className={cn(
+                          "px-3 py-2.5 text-right tabular-nums",
+                          overKey === c.key && dragKey && dragKey !== c.key && "bg-primary/5",
+                        )}
+                      >
+                        {renderCell(c.key, u, meta, spark)}
+                      </td>
+                    ))}
                   </tr>
                 );
               })}
@@ -273,6 +434,63 @@ export function UsersLeaderboardTable({ users, prs = [], searchQuery }: Props) {
       />
     </>
   );
+}
+
+function renderCell(
+  key: SortKey,
+  u: UserStats,
+  meta:
+    | {
+        health: number;
+        healthBand: HealthBand;
+        isBestReviewer: boolean;
+        bestRank?: number;
+      }
+    | undefined,
+  spark: number[],
+): React.ReactNode {
+  switch (key) {
+    case "health":
+      return <HealthCell band={meta?.healthBand} score={meta?.health} />;
+    case "activity14d":
+      return spark.some((v) => v > 0) ? (
+        <span className="inline-flex items-center justify-end">
+          <Sparkline
+            values={spark}
+            width={70}
+            height={18}
+            color="hsl(var(--chart-1))"
+            ariaLabel={`${u.login} 14-day activity`}
+          />
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      );
+    case "prsAuthored":
+      return formatNumber(u.prsAuthored);
+    case "prsMerged":
+      return formatNumber(u.prsMerged);
+    case "commentsGiven":
+      return <span className="font-semibold">{formatNumber(u.commentsGiven)}</span>;
+    case "R1_commentsGiven":
+      return <span className="text-chart-1">{formatNumber(u.R1_commentsGiven)}</span>;
+    case "R2_commentsGiven":
+      return <span className="text-chart-3">{formatNumber(u.R2_commentsGiven)}</span>;
+    case "commentsReceived":
+      return formatNumber(u.commentsReceived);
+    case "approvalsGiven":
+      return formatNumber(u.approvalsGiven);
+    case "avgTimeToFirstReviewHours":
+      return (
+        <span className="text-muted-foreground">
+          {u.avgTimeToFirstReviewHours == null
+            ? "—"
+            : `${u.avgTimeToFirstReviewHours.toFixed(1)} h`}
+        </span>
+      );
+    default:
+      return null;
+  }
 }
 
 function HealthCell({
