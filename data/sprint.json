@@ -1,0 +1,40 @@
+{
+  "activeSprintId": "demo-week",
+  "sprints": [
+    {
+      "id": "demo-week",
+      "name": "Demo — last 7 days",
+      "startDate": "2026-04-24T00:00:00+05:30",
+      "endDate": "2026-04-30T23:59:59+05:30",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "id": "demo-2week",
+      "name": "Demo — last 14 days",
+      "startDate": "2026-04-17T00:00:00+05:30",
+      "endDate": "2026-04-30T23:59:59+05:30",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "id": "demo-30day",
+      "name": "Demo — last 30 days",
+      "startDate": "2026-04-01T00:00:00+05:30",
+      "endDate": "2026-04-30T23:59:59+05:30",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "id": "S-2026-04",
+      "name": "Sprint 4 — April 2026",
+      "startDate": "2026-04-15T00:00:00+05:30",
+      "endDate": "2026-04-28T23:59:59+05:30",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "id": "S-2026-03",
+      "name": "Sprint 3 — early April 2026",
+      "startDate": "2026-04-01T00:00:00+05:30",
+      "endDate": "2026-04-14T23:59:59+05:30",
+      "timezone": "Asia/Kolkata"
+    }
+  ]
+}

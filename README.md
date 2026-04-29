@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PR Analytics Dashboard
 
-## Getting Started
+A public, read-only PR analytics dashboard that automatically aggregates pull-request data across **all repositories your GitHub token can see**, grouped **by user** to surface team performance.
 
-First, run the development server:
+- Zero-picker landing page — opens with full data
+- Works across **all orgs and all repos** the token has access to
+- Sprint-based filtering with optional drill-downs (orgs, repos, users, state, reviewer type)
+- Internal (R1) vs external (R2) reviewer classification
+- Aggressive caching (20 min TTL) and per-IP rate limiting
+- CSV export
+- Dark / light / system theme
+
+## ⚠️ Security: token scope = data scope
+
+The dashboard URL is **public** (no login required). The `GITHUB_TOKEN` you set on the server determines what data the public can see.
+
+| Deployment pattern                              | Token scope                          | Where to deploy                      |
+| ----------------------------------------------- | ------------------------------------ | ------------------------------------ |
+| Public OSS dashboard                            | `public_repo`                        | Vercel public URL                    |
+| Internal team dashboard                         | `repo`                               | Behind VPN / SSO / Cloudflare Access |
+| Hybrid (token can see private, app filters out) | `repo` + `ALLOW_PRIVATE_REPOS=false` | Vercel public URL                    |
+
+**Choose the right token for your visibility model.**
+
+## Quick start
 
 ```bash
+cp .env.example .env.local
+# edit .env.local and set GITHUB_TOKEN
+
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit `http://localhost:3000` — the dashboard auto-loads with full data once the token is configured.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See `.env.example` for the full list. Key vars:
 
-## Learn More
+- `GITHUB_TOKEN` (required) — PAT or fine-grained token
+- `MAX_REPOS_PER_AGGREGATION` (default 50) — caps fan-out per cache miss
+- `ALLOW_PRIVATE_REPOS` (default true) — set `false` to force public-only
+- `INCLUDE_ARCHIVED` / `INCLUDE_FORKS` — default false
+- `RATE_LIMIT_PER_MIN` (default 60)
+- `CACHE_PROVIDER` — `memory` (default) or `redis`
 
-To learn more about Next.js, take a look at the following resources:
+## Data files
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `data/team.json` — internal team membership (R1) + bot list
+- `data/sprint.json` — sprint definitions with active sprint id
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Edit these to match your team and sprint cadence; the server picks up changes on restart.
 
-## Deploy on Vercel
+## API endpoints
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Endpoint                    | Description                             |
+| --------------------------- | --------------------------------------- |
+| `GET /api/health`           | Health check + cache stats              |
+| `GET /api/config`           | Safe app config (sprints, app name)     |
+| `GET /api/discover`         | Token-accessible orgs and repos         |
+| `GET /api/github/aggregate` | Main aggregation (all filters optional) |
+| `GET /api/export`           | CSV export with same filter contract    |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Architecture
+
+```
+Client (Next.js, public)
+   ↓
+TanStack Query → /api/github/aggregate
+   ↓
+Per-IP rate limit → L1 cache → discovery
+   ↓
+GitHub REST (concurrency-limited, p-limit=8)
+   ↓
+Normalize → R1/R2 classify → bot filter → aggregate
+   ↓
+Cache (TTL 20m)
+```
+
+See `req.md` (project root) for the full spec.

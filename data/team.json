@@ -1,0 +1,57 @@
+{
+  "members": [
+    {
+      "githubUsername": "leerob",
+      "name": "Lee Robinson",
+      "role": "DX (Vercel)"
+    },
+    {
+      "githubUsername": "ijjk",
+      "name": "JJ Kasper",
+      "role": "Next.js maintainer"
+    },
+    {
+      "githubUsername": "timneutkens",
+      "name": "Tim Neutkens",
+      "role": "Next.js maintainer"
+    },
+    {
+      "githubUsername": "ztanner",
+      "name": "Zack Tanner",
+      "role": "Next.js maintainer"
+    },
+    {
+      "githubUsername": "shuding",
+      "name": "Shu Ding",
+      "role": "Next.js maintainer"
+    },
+    {
+      "githubUsername": "eps1lon",
+      "name": "Sample R1 reviewer",
+      "role": "Demo reviewer"
+    },
+    {
+      "githubUsername": "lukesandberg",
+      "name": "Sample R1 reviewer",
+      "role": "Demo reviewer"
+    },
+    {
+      "githubUsername": "mischnic",
+      "name": "Sample R1 reviewer",
+      "role": "Demo reviewer"
+    }
+  ],
+  "bots": [
+    "dependabot[bot]",
+    "github-actions[bot]",
+    "renovate[bot]",
+    "codecov[bot]",
+    "vercel[bot]",
+    "ijjk-vercel[bot]",
+    "kodiakhq[bot]"
+  ],
+  "config": {
+    "excludeBots": true,
+    "deletedUserClassification": "R2"
+  }
+}
