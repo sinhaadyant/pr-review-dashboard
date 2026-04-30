@@ -1,0 +1,11 @@
+# Netlify Secrets Controller may flag non-secret env vars whose values appear in
+# repository files or build output (e.g. NEXT_PUBLIC_* inlined into client bundles,
+# LOG_LEVEL / CACHE_PROVIDER referenced in server code).
+#
+# Docs: https://docs.netlify.com/build/environment-variables/secrets-controller/#configure-secret-scanning
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "LOG_LEVEL,NEXT_PUBLIC_APP_NAME,CACHE_PROVIDER"
+
+  # Smart detection false positives: exact substrings that are not credentials.
+  # Default app title from NEXT_PUBLIC_APP_NAME / .env.example.
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "PR Analytics"

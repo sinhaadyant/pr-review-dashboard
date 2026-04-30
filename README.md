@@ -78,14 +78,14 @@ Edit these to match your team and sprint cadence; the server picks up changes on
 
 ## Keyboard shortcuts
 
-| Key       | Action                          |
-| --------- | ------------------------------- |
-| `/`       | Focus search                    |
-| `Esc`     | Clear search (when focused)     |
-| `r`       | Refresh data                    |
-| `t`       | Toggle theme                    |
-| `1/2/3`   | Switch tabs (Users/Repos/Activity) |
-| `?`       | Show this help modal            |
+| Key     | Action                             |
+| ------- | ---------------------------------- |
+| `/`     | Focus search                       |
+| `Esc`   | Clear search (when focused)        |
+| `r`     | Refresh data                       |
+| `t`     | Toggle theme                       |
+| `1/2/3` | Switch tabs (Users/Repos/Activity) |
+| `?`     | Show this help modal               |
 
 ## Architecture
 
